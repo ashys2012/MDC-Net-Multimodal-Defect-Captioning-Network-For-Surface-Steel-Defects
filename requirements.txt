@@ -1,0 +1,10 @@
+torch>=1.13.0
+numpy>=1.23.0
+albumentations>=1.2.1
+scikit-learn>=1.1.1
+pandas>=1.4.3
+opencv-python-headless>=4.6.0.66
+timm>=0.6.7
+transformers>=4.20.1
+matplotlib>=3.5.2
+wandb>=0.12.21

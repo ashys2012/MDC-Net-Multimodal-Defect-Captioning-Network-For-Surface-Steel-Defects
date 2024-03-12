@@ -1,7 +1,7 @@
 import torch
 from tqdm import tqdm
 from allied_files import CFG, AvgMeter, get_lr
-from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss,  calculate_iou, iou_loss_individual
+from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss, extract_predictions,  calculate_iou, iou_loss_individual
 from data_processing import Tokenizer, Vocabulary
 #torch.set_printoptions(profile="full")
 
@@ -22,93 +22,82 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
     l1_lambda = CFG.l1_lambda  # L1 regularization strength
     iou_losses = torch.tensor([], device=CFG.device)
+    no_box_penalty = .0  # Penalty for no predicted boxes
 
     for x, y in tqdm_object:
         x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)   #shape of y is [1,100] and starts with BOS token
-        print("the shape of y is", y.shape)
+        #print("the shape of y is", y.shape)
         #print("The actual input is", y)
         
         
         
 
         y_input = y[:, :-1]
-        print("the shape of y_input is", y_input.shape)
+        #print("the shape of y_input is", y_input.shape)
 
         #y_expected = y[:, 1:]
         y_expected_adjusted = y[:, 1:].reshape(-1)
         #print("the shape of y_expected_adjusted is", y_expected_adjusted.shape)
 
-      #  print("The y_input is ", y_input)
+        first_sequence_y_input = y_input[0]  # This selects the first sequence in the batch
+        #print("True sequence in the batch is", first_sequence_y_input)
+
 
         preds = model(x, y_input)
         preds = preds[:, :-1]
         softmax = torch.nn.Softmax(dim=-1)  # Apply softmax across the features/classes dimension
         probs = softmax(preds)
         probs = probs.argmax(dim=-1)
-       # print("the shape of preds is", preds.shape)
-       # print("the shape of probs is", probs.shape)
 
-        #probs = probs[:, :-1]
-       # print("Preds  from the trainig loop", preds)
-#         decoded_labels, decoded_bboxes, decoded_caption = tokenizer.decode(probs)
-        # Assuming `probs` is your tensor after applying argmax
-        first_batch_probs = probs[0]  # This selects the first batch
+        # decoded_lables,decoded_pred_bboxes, decoded_captions = decode_predictions(probs, tokenizer)  # Adapt this to match your actual decoding function
+        # print("The decoded preditions of bbox is ", decoded_pred_bboxes)
+        # print("The decoded preditions of labels is ", decoded_lables)
+        # print("The decoded preditions of captions is ", decoded_captions)
+        first_batch_preds = probs[0]  # This selects the first batch
 
-        print("Probs from the first batch of the training loop:", first_batch_probs)
-        print("y_expected_adjusted from the  training loop:", y_expected_adjusted)
+        print("--------------------###########################################--------------------------------------------")
 
-        
-        
-        # Decode the predictions into bounding boxes (assuming a decode_predictions function exists)
-        decoded_lables,decoded_pred_bboxes, decoded_captions = decode_predictions(probs, tokenizer)  # Adapt this to match your actual decoding function
-#         print("Decoded Labels in preds the training loop::", decoded_labels)
-#         print("Decoded preds BBoxes inside the training loop:", decoded_pred_bboxes)
-#         print("Decoded Caption in preds the training loop::", decoded_caption)
+        print("preds in the training loop:", first_batch_preds)
+
+
+        decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(probs, tokenizer)  # Adapt this to match your actual decoding function
+        print("The decoded preditions of bbox is ", decoded_pred_bboxes)
+        print("The decoded preditions of labels is ", decoded_lables)
+        print("The decoded preditions of captions is ", decoded_captions)
+        first_batch_preds = probs[0]  # This selects the first batch
+
+        print("preds in the training loop:", first_batch_preds)
         
         # Extract the ground truth bounding boxes from `y` or another source as needed
         _, gt_bboxes, _ = extract_ground_truth(y_expected_adjusted, tokenizer)  # You need to implement this based on your dataset
 
-        # Calculate IoU loss
-        #iou_loss_val = iou_loss(torch.tensor(decoded_pred_bboxes), torch.tensor(gt_bboxes))
-        # Example assuming decoded_pred_bboxes and gt_bboxes are lists of tensors with the same shape
-        
-        #THe belwo has been commented due to the torch.stack error as the batch size and chnage of num_bboxes in multiple images
-        #more dettails on notion
-        
-#         # Correctly convert each list in decoded_pred_bboxes to a tensor
-#         decoded_pred_bboxes_tensors = [torch.tensor(bbox) for bbox in decoded_pred_bboxes] if decoded_pred_bboxes else []
 
-#         # Now use the tensors list for stacking
-#         decoded_pred_bboxes_tensor = torch.stack(decoded_pred_bboxes_tensors) if decoded_pred_bboxes_tensors else torch.Tensor()
+        #print("The length of decoded_pred_bboxes is", len(decoded_pred_bboxes))
+        #print("THe decoded_pred_bboxes is", decoded_pred_bboxes)
+        if all(len(bbox) == 0 for bbox in decoded_pred_bboxes):
+            # Set iou_losses to a tensor of no_box_penalty values
+            iou_losses = torch.full((len(gt_bboxes),), no_box_penalty, device=CFG.device)
+            #print(f"No predicted bounding boxes. IoU losses: {iou_losses}")
+        else:
+            for pred_bboxes, gt_bbox in zip(decoded_pred_bboxes, gt_bboxes):
+                # Ensure pred_bboxes and gt_bbox are tensors, and move them to the correct device
+                pred_bboxes_tensor = torch.tensor(pred_bboxes, dtype=torch.float, device=CFG.device)
+                gt_bbox_tensor = torch.tensor(gt_bbox, dtype=torch.float, device=CFG.device)
 
-        
-#         # Convert each numpy array in gt_bboxes to a tensor
-#         gt_bboxes_tensors = [torch.tensor(bbox) for bbox in gt_bboxes] if gt_bboxes else []
+                # Calculate IoU loss for this image
+                iou_loss_for_image = iou_loss_individual(pred_bboxes_tensor, gt_bbox_tensor)
+                #print(f"IoU loss for image: {iou_loss_for_image}")
+                iou_loss_for_image = iou_loss_for_image.to(CFG.device)
+                iou_losses = torch.cat((iou_losses, iou_loss_for_image.unsqueeze(0)), dim=0)
 
-#         # Now use the tensors list for stacking
-#         gt_bboxes_tensor = torch.stack(gt_bboxes_tensors) if gt_bboxes_tensors else torch.Tensor()
-
-
-        for pred_bboxes, gt_bbox in zip(decoded_pred_bboxes, gt_bboxes):
-            # Ensure pred_bboxes and gt_bbox are tensors, and move them to the correct device
-            pred_bboxes_tensor = torch.tensor(pred_bboxes, dtype=torch.float, device=CFG.device)
-            #print("The length pred_bboxes_tensor inside the for loop of the  train loop is ", pred_bboxes_tensor)
-            gt_bbox_tensor = torch.tensor(gt_bbox, dtype=torch.float, device=CFG.device)
-            #print("The length of the gt_bbox_tensor inside the train loop is", len(gt_bbox_tensor))
-
-            # Calculate IoU loss for this image
-            iou_loss_for_image = iou_loss_individual(pred_bboxes_tensor, gt_bbox_tensor)
-            #print("The IOU loss inside the trian loop is", iou_loss_for_image )      #this gives a zero
-            iou_loss_for_image = iou_loss_for_image.to(CFG.device)
-            iou_losses = torch.cat((iou_losses, iou_loss_for_image.unsqueeze(0)), dim=0)
-            #iou_losses.append(iou_loss_for_image.item())   #item gives an error as it is a float not a tensor
-            #print("The total IOU loss inside the trian loop for a batch is ", iou_losses )
-            
         # Compute mean IoU loss across the batch
         if iou_losses.nelement() > 0:  # Check if iou_losses is not empty
             iou_loss_val = iou_losses.mean()
         else:
             iou_loss_val = torch.tensor(0.0, device=CFG.device)
+
+        #print(f"Mean IoU loss: {iou_loss_val}")
+        #iou_loss_val = torch.stack(iou_losses).mean()
 
         #iou_loss_val = sum(iou_losses) / len(iou_losses) if iou_losses else torch.tensor(0.0, device=CFG.device)   #item gives an error as it is a float not a tensor
         #iou_loss_val = iou_loss(decoded_pred_bboxes_tensor, gt_bboxes_tensor)    #torch.stack_error code
@@ -186,10 +175,10 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_individ
             # Update other meters similarly
 
             # Print statements every 10 or 15 iterations
-            if i % 10000 == 0:  # Change 10 or 15 according to your preference
-                print(f"Iteration {i}:")
-                print("The predictions in the valid loop are", preds)
-                print("The y_expected_adjusted in the valid loop is", y_expected_adjusted)
+            # if i % 10000 == 0:  # Change 10 or 15 according to your preference
+            #     print(f"Iteration {i}:")
+            #     print("The predictions in the valid loop are", preds)
+            #     print("The y_expected_adjusted in the valid loop is", y_expected_adjusted)
 
             tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, iou_loss=iou_loss_meter.avg)
 

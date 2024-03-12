@@ -63,33 +63,90 @@ def iou_loss(pred_boxes, gt_boxes, min_penalty=0.5):
     return iou_loss.mean()
 
 
-def iou_loss_individual(pred_boxes, gt_boxes, min_penalty=0.1):
-    # Check if pred_boxes is empty properly
-    # If pred_boxes is a list, check if the list is empty
-    # If pred_boxes is a tensor, check if it has any elements
-    is_pred_boxes_empty = (isinstance(pred_boxes, list) and len(pred_boxes) == 0) or \
-                          (isinstance(pred_boxes, torch.Tensor) and pred_boxes.nelement() == 0)
 
-    # If pred_boxes is empty, return the minimum penalty as the IoU loss
-    if is_pred_boxes_empty:
-        # Ensure to return on the correct device, similar to gt_boxes if available, or default to 'cpu'
-        device = gt_boxes.device if isinstance(gt_boxes, torch.Tensor) and gt_boxes.nelement() > 0 else torch.device('cpu')
-        return torch.tensor(min_penalty, device=device)
+def calculate_iou_individual(pred_box, gt_boxes):
+    """
+    Calculate IoU for a single predicted box against multiple ground truth boxes.
+    
+    Args:
+        pred_box (Tensor): Single predicted bounding box, shape [1, 4].
+        gt_boxes (Tensor): Ground truth bounding boxes, shape [N, 4].
+        
+    Returns:
+        Tensor: IoUs for the predicted box against each ground truth box, shape [N].
+    """
+    # Assuming calculate_iou can handle broadcasting or has been adapted to
+    # calculate IoUs for one pred_box against multiple gt_boxes
+    ious = calculate_iou(pred_box.expand_as(gt_boxes), gt_boxes)
+    return ious
 
-    # Continue with your existing logic if pred_boxes is not empty
-    ious = []
-    for index, pred_box in enumerate(pred_boxes):
-        ious_for_pred = [calculate_iou(pred_box.unsqueeze(0), gt_box.unsqueeze(0)) for gt_box in gt_boxes]
-        best_iou = max(ious_for_pred) if ious_for_pred else torch.tensor(min_penalty, device=pred_boxes[0].device)
-        best_iou = torch.where(best_iou > 0, best_iou, torch.tensor(min_penalty, device=pred_boxes[0].device))
-        ious.append(best_iou)
 
-    average_iou = torch.stack(ious).mean() if ious else torch.tensor(min_penalty, device=pred_boxes[0].device)
-    iou_loss = 1 - average_iou
-    return iou_loss
+
+def iou_loss_individual(pred_boxes, gt_boxes, min_penalty=0.1, no_box_penalty=1.0):
+    """
+    Calculate IoU loss for individual pairs of predicted and ground truth boxes, applying a minimum penalty.
+    
+    Args:
+        pred_boxes (Tensor): Predicted bounding boxes, shape [N, 4].
+        gt_boxes (Tensor): Ground truth bounding boxes, shape [N, 4].
+        min_penalty (float): Minimum penalty to apply when IoU is zero.
+        no_box_penalty (float): Penalty to apply when no boxes are predicted.
+        
+    Returns:
+        Tensor: IoU loss for each predicted box, with minimum penalty applied, shape [N].
+    """
+    if pred_boxes.nelement() == 0:
+        # Return the no_box_penalty as the loss if no predicted boxes
+        return torch.full((gt_boxes.size(0),), no_box_penalty, device=gt_boxes.device)
+
+    iou_losses = []
+    for pred_box in pred_boxes:
+        ious = calculate_iou_individual(pred_box.unsqueeze(0), gt_boxes)
+        print(f"IoUs: {ious}")
+        # Apply minimum penalty for zero IoU values
+        ious = torch.where(ious > 0, ious, torch.full_like(ious, min_penalty))
+        # Calculate loss as 1 - IoU for each pair, applying minimum penalty
+        loss = 1 - ious
+        iou_losses.append(loss)
+
+    # Stack to create a tensor of individual losses and calculate mean loss per predicted box
+    iou_losses = torch.stack(iou_losses).mean(dim=1)
+    return iou_losses.mean()
+
+
 
 
 def extract_ground_truth(token_sequences, tokenizer):
+    """
+    Utilize the tokenizer's decode function to extract labels, bounding boxes, and captions
+    from a batch of token sequences representing the ground truth.
+
+    Args:
+        token_sequences (Tensor): Batch of token sequences, shape [batch_size, sequence_length].
+        tokenizer (Tokenizer): Initialized tokenizer with a decode method.
+
+    Returns:
+        Three lists containing labels, bounding boxes, and captions for each sequence in the batch.
+    """
+    all_labels = []
+    all_bboxes = []
+    all_captions = []
+    #print("The ground truth token sequnces in extract gnd truth is", token_sequences)
+    #print("------Here is the ground truth tokenizer decoded-------------")
+    for tokens in token_sequences:
+        labels, bboxes, caption = tokenizer.decode(tokens)
+        all_labels.append(labels)
+        all_bboxes.append(bboxes)
+        all_captions.append(caption)
+#     print("The gnd truth of all_labels",all_labels)
+#     print("The gnd truth of all_bboxes",all_bboxes)
+#     print("The gnd truth of all_captions",all_captions)
+
+    return all_labels, all_bboxes, all_captions
+
+
+
+def extract_predictions(token_sequences, tokenizer):
     """
     Utilize the tokenizer's decode function to extract labels, bounding boxes, and captions
     from a batch of token sequences representing the ground truth.

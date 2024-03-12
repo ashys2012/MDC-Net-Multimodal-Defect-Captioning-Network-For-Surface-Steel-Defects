@@ -152,6 +152,8 @@ def collate_fn(batch, max_len, pad_idx):
                          seq_batch.size(1)).fill_(pad_idx).long()
         seq_batch = torch.cat([seq_batch, pad], dim=1)
     image_batch = torch.stack(image_batch)
+    #print("The seq_batch is inside the collate fucntion is", seq_batch)
+    #print("The seq_batch shape is inside the collate fucntion is", seq_batch.shape)
 
     return image_batch, seq_batch#, caption_batch
 

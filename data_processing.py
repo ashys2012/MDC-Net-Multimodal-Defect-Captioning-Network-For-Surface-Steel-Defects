@@ -7,6 +7,7 @@ from dataset import get_transform_train, get_transform_valid, collate_fn
 import os
 from functools import partial
 import cv2
+from allied_files import CFG
 spacy_eng = spacy.load('en_core_web_sm') 
 
 class Vocabulary:
@@ -294,145 +295,93 @@ class Tokenizer:
         print("STOI:", self.vocab.stoi)
         print("ITOS:", self.vocab.itos)
     
-    # def decode(self, tokens: torch.tensor):
-    #     """
-    #     tokens: torch.LongTensor with shape [L]
-    #     """
-    #     mask = tokens != self.PAD_code
-    #     tokens = tokens[mask]
-    #     print(type(tokens), tokens)
-    #     print("Tokens:-----", tokens)
-    #     tokens = tokens[1:-1]
         
-        
-        
-    #     # Assuming each object is represented by 5 tokens: 4 for bbox and 1 for label
-    #     # and each caption is represented by N tokens
-    #     assert len(tokens) % (5 + self.caption_length) == 0, "invalid tokens"
+
     def decode(self, tokens):
-        #tokens = torch.tensor(tokens)  # Convert list to PyTorch tensor commented due to warning of unecssary memory allocation
-        #tokens = tokens.clone().detach()
-        
+        # Convert list to PyTorch tensor if necessary
         if isinstance(tokens, list):
-            tokens = torch.tensor(tokens)  # Adjust dtype as necessary
-        # Now tokens is guaranteed to be a tensor, so we can clssone and detach
+            tokens = torch.tensor(tokens, device=CFG.device)
+
         tokens = tokens.clone().detach()
         
-           
+        if tokens.numel() == 0:
+            return [], [], ""
+        
+        # Remove only PAD tokens initially
+        tokens = tokens[tokens != self.PAD_code]
+
+        # Find the EOS token's index
+        eos_idx = (tokens == self.EOS_code).nonzero(as_tuple=True)[0]
+
+        # If tokens tensor is empty, add a dimension
+        if tokens.dim() == 0:
+            tokens = tokens.unsqueeze(0)
+
+        # If EOS token is found, keep only the tokens before EOS
+        if eos_idx.nelement() > 0:
+            eos_idx = eos_idx[0].item()
+            tokens = tokens[:eos_idx]
+            #print("After truncating at EOS token:", tokens.tolist())
+
         
 
-        #print("The tokens from tokenizer is before removing EOS and BOS", tokens)
-
-        if tokens.numel() == 0:  # Check if tensor is empty
-            return [], [], []
-
-        # Remove BOS and EOS tokens
-        #tokens = tokens[1:-1]
-        #tokens = tokens[(tokens != self.PAD_code)]
+        labels, bboxes = [], []
+        captions_text = ""
         
-       # print("The tokens from tokenizer is after removing EOS and BOS", tokens)
-        #print("The data type of tokens is:", type(tokens))
-        #print("The length of tokens is:", len(tokens))
-
-        labels = []
-        bboxes = []
-        caption_tokens = []
-        #print("Raw tokens from the decode func of tokenizer",tokens)
-        # Find SOC (Start of Caption) and EOC (End of Caption) indices
+        # Find SOC and EOC indices
         soc_idxs = (tokens == self.CAPTION_START).nonzero(as_tuple=True)[0]
-       # print("The soc Idx are ----", soc_idxs)
-        if soc_idxs.nelement() > 0:
-            soc_idx = soc_idxs[0].item()  # Use the first occurrence
-        else:
-            # Handle the case where CAPTION_START is not found
-            soc_idx = None
-
-        # Apply a similar check for CAPTION_END
+        soc_idx = soc_idxs[0].item() if soc_idxs.nelement() > 0 else None
         eoc_idxs = (tokens == self.CAPTION_END).nonzero(as_tuple=True)[0]
-        if eoc_idxs.nelement() > 0:
-            eoc_idx = eoc_idxs[0].item()  # Use the first occurrence
-        else:
-            # Handle the case where CAPTION_END is not found
-            eoc_idx = None
-
-        # Proceed with decoding only if both start and end indices are found
-        if soc_idx is not None and eoc_idx is not None:
-            # Extract and process the caption using soc_idx and eoc_idx
-            # Remember to adjust subsequent logic to account for the possibility
-            # that soc_idx or eoc_idx could be None
-            caption_tokens = tokens[soc_idx+1:eoc_idx]
-        else:
-            # Handle cases where SOC or EOC are not found appropriately
-            pass
-            #print("SOC or EOC token not found.")
-
-
-        # Decode Caption
-        #caption_tokens = tokens[soc_idx+1:eoc_idx]
-        #captions_text = self.tokens_to_text([caption_tokens.tolist()])
-
-        # Assuming the previous checks for soc_idx and eoc_idx
-        # and setting them to None if not found...
+        eoc_idx = eoc_idxs[0].item() if eoc_idxs.nelement() > 0 else None
 
         if soc_idx is not None and eoc_idx is not None:
-            # It's safe to proceed with operations involving soc_idx and eoc_idx
+            # Extract caption
             caption_tokens = tokens[soc_idx+1:eoc_idx]
-            captions_text = self.tokens_to_text([caption_tokens.tolist()])
+            captions_text = self.tokens_to_text(caption_tokens.tolist())
 
-            # Process BBoxes and Labels after EOC
-            bbox_label_tokens = tokens[eoc_idx+1:]
-            for i in range(0, len(bbox_label_tokens), 5):  # Assuming format [label, xmin, ymin, xmax, ymax]
-                # Ensure i+4 does not exceed bbox_label_tokens length
+            # Process bounding boxes and labels after EOC, up to EOS
+            bbox_label_tokens = tokens[eoc_idx+1:]       #if eos is there then the code will be bbox_label_tokens = tokens[eoc_idx+1:eos_idx]
+
+            for i in range(0, len(bbox_label_tokens), 5):
                 if i+4 < len(bbox_label_tokens):
-                    label_tensor = bbox_label_tokens[i:i+1]  # Extract as tensor
-                    if label_tensor.numel() == 1:  # Ensure it's a single-element tensor
-                        label = label_tensor.item()  # Convert to Python scalar
-                        labels.append(int(label))
-                        bbox = bbox_label_tokens[i+1:i+5]
+                    label_tensor = bbox_label_tokens[i:i+1]
+                    bbox = bbox_label_tokens[i+1:i+5]
+                    
+                    # Check for valid label and bbox values
+                    if label_tensor.numel() == 1 and label_tensor.item() in range(258, 264) and all(0 <= item <= 224 for item in bbox):
+                        label = label_tensor.item()
+                        labels.append(label)
                         bboxes.append([int(item) for item in bbox])
                     else:
-                        # Handle unexpected tensor size (e.g., log an error or throw an exception)
-                        print(f"Unexpected label_tensor size: {label_tensor}")
-        else:
-            # Handle cases where SOC or EOC are not found appropriately
-           # print("SOC or EOC token not found.")
-            # Optionally set default values or perform cleanup actions here
-            captions_text = ""
-            labels = []
-            bboxes = []
-
+                        pass
+                        #print(f"Invalid label or bbox values: {label_tensor} {bbox}")
 
         # Adjust BBoxes to original dimensions
         bboxes = np.array(bboxes, dtype=float)
-        # Check if 'bboxes' is empty
         if bboxes.size > 0:
             if bboxes.ndim == 1:
-                # Proceed if it's a 1D array and non-empty
                 bboxes[0] = self.dequantize(bboxes[0]) * self.width
                 bboxes[2] = self.dequantize(bboxes[2]) * self.width
-                # And similarly for y coordinates
                 bboxes[1] = self.dequantize(bboxes[1]) * self.height
                 bboxes[3] = self.dequantize(bboxes[3]) * self.height
-                #print("bboxes in the decode are bboxes.size > 0:",bboxes)
             elif bboxes.ndim == 2:
-                # If 'bboxes' is 2D, you might handle it differently, for example:
                 bboxes[:, [0, 2]] = self.dequantize(bboxes[:, [0, 2]]) * self.width
                 bboxes[:, [1, 3]] = self.dequantize(bboxes[:, [1, 3]]) * self.height
-                #print("bboxes in the decode are  bboxes.ndim == 2:",bboxes)
-                
-        else:
-            # Handle the case where 'bboxes' is empty
-           # print("Warning: No bounding boxes to decode.")
-            # Optionally, set 'bboxes' to a default value or handle as appropriate
-            pass
 
-
-        return labels, bboxes, captions_text[0] if captions_text else ""
+        return labels, bboxes.tolist(), captions_text
 
 
     
 
     
     def tokens_to_text(self, captions):
+        # If captions is empty, return an empty list
+        if not captions:
+            return []
+
+        # If captions is a list of integers, convert it to a list of lists of integers
+        if isinstance(captions[0], int):
+            captions = [[caption] for caption in captions]
+
         # Convert list of token lists back to list of caption texts
         return [" ".join([self.vocab.itos.get(token, '<UNK>') for token in caption]) for caption in captions]

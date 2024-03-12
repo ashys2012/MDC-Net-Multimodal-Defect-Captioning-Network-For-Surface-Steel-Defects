@@ -15,14 +15,14 @@ def seed_everything(seed=1234):
 class CFG:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    max_len = 200
+    max_len = 100
     img_size = 224
     num_bins = img_size
 
     debug = False
     
-    batch_size = 16
-    epochs = 45
+    batch_size = 64
+    epochs = 65
     
     model_name = 'deit3_medium_patch16_224.fb_in22k_ft_in1k'
     num_patches = 196
@@ -31,7 +31,7 @@ class CFG:
 
     generation_steps = 101
     l1_lambda = 1e-7             #kept high as the model is complex
-    patience = 8
+    patience = 60
 
 
 #below is from the original

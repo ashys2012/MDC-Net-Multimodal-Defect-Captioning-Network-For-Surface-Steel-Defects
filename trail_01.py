@@ -152,7 +152,7 @@ def train_eval(model, train_loader, valid_loader, criterion, optimizer, lr_sched
         if avg_iou < best_metric:  # Assuming lower is better; adjust the comparison operator as needed
             best_metric = avg_iou
             epochs_since_improvement = 0  # Reset counter
-            save_path = 'best_model_by_iou_1.pth'
+            save_path = 'output_path/best_model_by_iou_1.pth'
             torch.save(model.state_dict(), save_path)
             print("Saved Model with Best Average IoU")
         else:

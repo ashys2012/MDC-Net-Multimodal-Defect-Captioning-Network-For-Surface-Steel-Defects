@@ -4,7 +4,7 @@ from allied_files import CFG, AvgMeter, get_lr
 from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss, extract_predictions,  calculate_iou, iou_loss_individual
 from data_processing import Tokenizer, Vocabulary
 #torch.set_printoptions(profile="full")
-
+import torch.nn.functional as F
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
@@ -25,48 +25,44 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
     no_box_penalty = .0  # Penalty for no predicted boxes
 
     for x, y in tqdm_object:
-        x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)   #shape of y is [1,100] and starts with BOS token
-        #print("the shape of y is", y.shape)
-        #print("The actual input is", y)
-        
-        
-        
-
+        x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)   
         y_input = y[:, :-1]
-        #print("the shape of y_input is", y_input.shape)
-
-        #y_expected = y[:, 1:]
-        y_expected_adjusted = y[:, 1:].reshape(-1)
-        #print("the shape of y_expected_adjusted is", y_expected_adjusted.shape)
-
-        first_sequence_y_input = y_input[0]  # This selects the first sequence in the batch
-        #print("True sequence in the batch is", first_sequence_y_input)
-
+        y_expected = y[:, 1:]                                                   #The shape of y_expected is torch.Size([64, 99])
+        y_expected_adjusted = y[:, 1:].reshape(-1)                              #The shape of y_expected_adjusted is torch.Size([6336]) (99*64)
 
         preds = model(x, y_input)
-        preds = preds[:, :-1]
-        softmax = torch.nn.Softmax(dim=-1)  # Apply softmax across the features/classes dimension
-        probs = softmax(preds)
-        probs = probs.argmax(dim=-1)
+        preds = preds[:, :-1]                                                    #The shape of preds is torch.Size([64, 99, 305])
+        predicted_classes = torch.argmax(preds, dim=-1)                          #The shape of predicted_classes is torch.Size([64, 99])
 
-        # decoded_lables,decoded_pred_bboxes, decoded_captions = decode_predictions(probs, tokenizer)  # Adapt this to match your actual decoding function
+        #Label cross entropy loss calculations
+        predicted_labels = tokenizer.extract_predicted_labels_with_logits(preds) #The shape of predicted_labels is torch.Size([64, 305]) --[batch_size, num_classes]
+        ground_truth_labels = tokenizer.decode_labels(y_expected)                #The shape of ground_truth_labels is torch.Size([64])
+        predicted_labels = predicted_labels.float()
+        Label_loss = criterion(predicted_labels, ground_truth_labels)            # CFG.pad_idx is the PAD_TOKEN in your decode_labels function
+
+        #Classification Accuracy calculations#
+        final_predicted_classes = tokenizer.decode_labels(predicted_classes)     #The shape of  final predicted classes value is torch.Size([64])
+        # Accuracy calculation might need to account for PAD_TOKENs
+        valid_indices = final_predicted_classes != CFG.pad_idx  # Ignore PAD_TOKEN in accuracy calculation
+        valid_accuracy = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
+        print(f"Valid Accuracy: {valid_accuracy.item()}")
+# 
+        print("The shape of final_predicted_classes is", final_predicted_classes.shape)
+        print("THe shape of ground_truth_labels is", ground_truth_labels.shape)
+        print("The valid_indices value is", valid_indices)
+        print("The ground_truth_labels value is", ground_truth_labels)
+        # accuracy = (final_predicted_classes == ground_truth_labels).float().mean()
+        # print(f"Accuracy: {accuracy.item()}")
+
+
+
+
+        decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(preds, tokenizer)  # Adapt this to match your actual decoding function
         # print("The decoded preditions of bbox is ", decoded_pred_bboxes)
         # print("The decoded preditions of labels is ", decoded_lables)
         # print("The decoded preditions of captions is ", decoded_captions)
-        first_batch_preds = probs[0]  # This selects the first batch
-
-        print("--------------------###########################################--------------------------------------------")
-
-        print("preds in the training loop:", first_batch_preds)
-
-
-        decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(probs, tokenizer)  # Adapt this to match your actual decoding function
-        print("The decoded preditions of bbox is ", decoded_pred_bboxes)
-        print("The decoded preditions of labels is ", decoded_lables)
-        print("The decoded preditions of captions is ", decoded_captions)
-        first_batch_preds = probs[0]  # This selects the first batch
-
-        print("preds in the training loop:", first_batch_preds)
+        #first_batch_preds = probs[0]  # This selects the first batch
+        #print("The first batch preds is", first_batch_preds)
         
         # Extract the ground truth bounding boxes from `y` or another source as needed
         _, gt_bboxes, _ = extract_ground_truth(y_expected_adjusted, tokenizer)  # You need to implement this based on your dataset
@@ -88,6 +84,8 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
                 iou_loss_for_image = iou_loss_individual(pred_bboxes_tensor, gt_bbox_tensor)
                 #print(f"IoU loss for image: {iou_loss_for_image}")
                 iou_loss_for_image = iou_loss_for_image.to(CFG.device)
+                print("The shape of iou_loss_for_image is", iou_loss_for_image.shape)
+                print("THe shape of iou_losses is", iou_losses.shape)
                 iou_losses = torch.cat((iou_losses, iou_loss_for_image.unsqueeze(0)), dim=0)
 
         # Compute mean IoU loss across the batch
@@ -105,7 +103,12 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         
         # Calculate your existing loss (e.g., cross-entropy for captions)
         #ce_loss = criterion(preds.reshape(-1, preds.shape[-1]), y_expected.reshape(-1))
+            
+
         ce_loss = criterion(preds.reshape(-1, preds.shape[-1]), y_expected_adjusted)
+
+
+
 
 
 

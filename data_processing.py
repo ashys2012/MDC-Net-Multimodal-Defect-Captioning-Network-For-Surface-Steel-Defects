@@ -305,17 +305,20 @@ class Tokenizer:
         tokens = tokens.clone().detach()
         
         if tokens.numel() == 0:
+            print("Empty tokens tensor")
             return [], [], ""
+        
+        # If tokens tensor is scalar, add a dimension
+        if tokens.dim() == 0:               
+            tokens = tokens.unsqueeze(0)
         
         # Remove only PAD tokens initially
         tokens = tokens[tokens != self.PAD_code]
 
         # Find the EOS token's index
-        eos_idx = (tokens == self.EOS_code).nonzero(as_tuple=True)[0]
+        eos_idx = (tokens == self.EOS_code).nonzero(as_tuple=True)[0]   # this gets the first occurance of the EOS token
 
-        # If tokens tensor is empty, add a dimension
-        if tokens.dim() == 0:
-            tokens = tokens.unsqueeze(0)
+
 
         # If EOS token is found, keep only the tokens before EOS
         if eos_idx.nelement() > 0:
@@ -323,7 +326,7 @@ class Tokenizer:
             tokens = tokens[:eos_idx]
             #print("After truncating at EOS token:", tokens.tolist())
 
-        
+        #print("The tokens in the tokenizer are", tokens)
 
         labels, bboxes = [], []
         captions_text = ""
@@ -369,6 +372,73 @@ class Tokenizer:
                 bboxes[:, [1, 3]] = self.dequantize(bboxes[:, [1, 3]]) * self.height
 
         return labels, bboxes.tolist(), captions_text
+    
+
+    def decode_labels(self, tokens):
+        PAD_TOKEN = CFG.pad_idx
+        if isinstance(tokens, list):
+            tokens = torch.tensor(tokens, device=CFG.device)
+
+        tokens = tokens.clone().detach()
+        
+        if tokens.numel() == 0:
+            return []
+        
+        # If tokens tensor is scalar, add a dimension
+        if tokens.dim() == 0:               
+            tokens = tokens.unsqueeze(0)        
+        
+        LABEL_START, LABEL_END = 258, 263
+        label_mask = (tokens >= LABEL_START) & (tokens <= LABEL_END)
+
+        # Applying mask to isolate label tokens, maintaining structure
+        label_tokens = tokens * label_mask
+
+        # Iterate over batch to extract the first label token per item
+        first_labels = []
+        for item_labels in label_tokens:
+            item_labels = item_labels[item_labels.nonzero(as_tuple=True)]  # Filter non-zero labels
+            first_label = item_labels[0] if len(item_labels) > 0 else PAD_TOKEN  # Take first or None if no labels
+            first_labels.append(first_label)
+        return torch.tensor(first_labels, device=tokens.device)
+        
+    
+    def extract_predicted_labels_with_logits(self, logits):
+        PAD_TOKEN = CFG.pad_idx
+        LABEL_START, LABEL_END = 258, 263
+        
+        batch_size, seq_len, num_classes = logits.shape
+        # Prepare tensors for extracted logits and labels
+        extracted_logits = torch.empty(batch_size, num_classes, device=logits.device)
+        extracted_label_indices = torch.empty(batch_size, dtype=torch.long, device=logits.device)
+        
+        # Iterate over each sequence in the batch
+        for i in range(batch_size):
+            # Directly work with logits to find the first label position
+            # This step might involve using domain-specific knowledge about how labels are encoded in logits
+            
+            # Example approach (needs adaptation to your specific case):
+            # Assuming label token indices are directly reflected in the logits in some manner
+            # If logits do not directly encode label positions, adjust this logic accordingly
+            label_mask = torch.zeros(seq_len, dtype=torch.bool, device=logits.device)
+            for j in range(LABEL_START, LABEL_END + 1):
+                label_mask |= logits[i, :, j].nonzero(as_tuple=True)[0].bool()
+            
+            label_idx = label_mask.nonzero(as_tuple=True)[0]
+            
+            if len(label_idx) > 0:
+                # If a label position is identified, select its logits
+                first_label_pos = label_idx[0]
+                extracted_logits[i] = logits[i, first_label_pos]
+                # This assumes a separate process to accurately obtain label indices if necessary
+            else:
+                # Handle sequences without identifiable labels
+                extracted_logits[i].fill_(PAD_TOKEN)
+                # Indicate no label found; adjust according to how you wish to handle such cases
+        
+        # This function now focuses on extracting logits and does not directly provide label indices
+        # Adjust usage accordingly in loss calculation
+        return extracted_logits
 
 
     

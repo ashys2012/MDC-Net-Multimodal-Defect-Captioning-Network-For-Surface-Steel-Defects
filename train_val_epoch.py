@@ -34,6 +34,7 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         preds = preds[:, :-1]                                                    #The shape of preds is torch.Size([64, 99, 305])
         predicted_classes = torch.argmax(preds, dim=-1)                          #The shape of predicted_classes is torch.Size([64, 99])
 
+
         #Label cross entropy loss calculations
         predicted_labels = tokenizer.extract_predicted_labels_with_logits(preds) #The shape of predicted_labels is torch.Size([64, 305]) --[batch_size, num_classes]
         ground_truth_labels = tokenizer.decode_labels(y_expected)                #The shape of ground_truth_labels is torch.Size([64])

@@ -43,10 +43,14 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         #Classification Accuracy calculations#
         final_predicted_classes = tokenizer.decode_labels(predicted_classes)     #The shape of  final predicted classes value is torch.Size([64])
+        print("The final_predicted_classes value is", final_predicted_classes)
         # Accuracy calculation might need to account for PAD_TOKENs
-        valid_indices = final_predicted_classes != CFG.pad_idx  # Ignore PAD_TOKEN in accuracy calculation
-        valid_accuracy = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
-        print(f"Valid Accuracy: {valid_accuracy.item()}")
+        valid_indices = final_predicted_classes != CFG.pad_idx                   # Ignore PAD_TOKEN in accuracy calculation
+        train_accuracy_with_no_penalty = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
+        train_accuracy = (final_predicted_classes == ground_truth_labels) & valid_indices
+        train_accuracy_with_penalty = train_accuracy.float().mean()
+        print(f"train_accuracy_with_no_penalty: {train_accuracy_with_no_penalty.item()}")
+        print(f"train_accuracy_with_penalty: {train_accuracy_with_penalty.item()}")
 # 
         print("The shape of final_predicted_classes is", final_predicted_classes.shape)
         print("THe shape of ground_truth_labels is", ground_truth_labels.shape)

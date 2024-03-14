@@ -2,9 +2,11 @@ import torch
 from tqdm import tqdm
 from allied_files import CFG, AvgMeter, get_lr
 from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss, extract_predictions,  calculate_iou, iou_loss_individual
-from data_processing import Tokenizer, Vocabulary
+from data_processing import Tokenizer, Vocabulary, top_k_sampling
 #torch.set_printoptions(profile="full")
 import torch.nn.functional as F
+from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import SmoothingFunction
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
@@ -51,10 +53,29 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         # To print the accuracy you need to use item() at the end.
 
         #BLEU score calculations for captions
+        captions = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+        caption_grnd_truth = tokenizer.decode_captions(y_expected)             #The shape of caption_grnd_truth is torch.Size([64, 99]
 
-        captions_preds = tokenizer.decode_captions(preds)             #The shape of captions_preds is torch.Size([64, 99])
+        captions_preds = tokenizer.decode_captions(captions)             #The shape of captions_preds is torch.Size([64, 99])
         print("The shape of captions_preds is", captions_preds.shape)
         print("The captions_preds is", captions_preds)
+        print("The shape of caption_grnd_truth is", caption_grnd_truth.shape)
+        print("The caption_grnd_truth is", caption_grnd_truth)
+        # Convert tensors to lists of integers (token IDs)
+        captions_preds_list = captions_preds.cpu().tolist()
+        caption_grnd_truth_list = [caption_grnd_truth.cpu().tolist()]  # Note: ground truth should be a list of references, hence the extra []
+
+        # Calculate BLEU score
+        # We use a list of lists for the ground truth to simulate multiple reference translations, which is the common format for BLEU calculation.
+        # Even though we have only one reference, it needs to be wrapped in another list.
+        chencherry = SmoothingFunction()
+        bleu_score = sentence_bleu(caption_grnd_truth_list, captions_preds_list, 
+                           smoothing_function=chencherry.method1)
+
+        print("BLEU Score:", bleu_score)
+
+
+
         decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(preds, tokenizer)  # Adapt this to match your actual decoding function
         # print("The decoded preditions of bbox is ", decoded_pred_bboxes)
         # print("The decoded preditions of labels is ", decoded_lables)

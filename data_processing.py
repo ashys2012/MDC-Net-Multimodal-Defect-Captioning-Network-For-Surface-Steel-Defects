@@ -85,7 +85,7 @@ class Vocabulary:
 
 
 
-
+vocab = Vocabulary(freq_threshold=5)
 
 
 class VOCDataset(torch.utils.data.Dataset):
@@ -404,7 +404,7 @@ class Tokenizer:
         boc_idx = (tokens == self.CAPTION_START).nonzero(as_tuple=True)[0]   # this gets the first occurance of the EOS token
         # If EOS token is found, keep only the tokens before EOS
         if boc_idx.nelement() > 0:
-            boc_idx = boc_idx[0].item()
+            boc_idx = boc_idx[0].item() + 1
             tokens = tokens[boc_idx:]
         return tokens
 
@@ -494,3 +494,10 @@ class Tokenizer:
 
         # Convert list of token lists back to list of caption texts
         return [" ".join([self.vocab.itos.get(token, '<UNK>') for token in caption]) for caption in captions]
+    
+
+def top_k_sampling(logits, k):
+    indices_to_remove = logits < torch.topk(logits, k)[0][..., -1, None]
+    logits[indices_to_remove] = -float('Inf')
+    probs = torch.softmax(logits, dim=-1)
+    return torch.multinomial(probs, 1)

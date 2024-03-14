@@ -374,6 +374,44 @@ class Tokenizer:
         return labels, bboxes.tolist(), captions_text
     
 
+
+    def decode_captions(self, tokens):
+        # Convert list to PyTorch tensor if necessary
+        if isinstance(tokens, list):
+            tokens = torch.tensor(tokens, device=CFG.device)
+
+        tokens = tokens.clone().detach()
+        
+        if tokens.numel() == 0:
+            print("Empty tokens tensor")
+            return [], [], ""
+        
+        # If tokens tensor is scalar, add a dimension
+        if tokens.dim() == 0:               
+            tokens = tokens.unsqueeze(0)
+        
+        # Remove only PAD tokens initially
+        tokens = tokens[tokens != self.PAD_code]
+
+        # Find the End of caption token's index
+        eoc_idx = (tokens == self.CAPTION_END).nonzero(as_tuple=True)[0]   # this gets the first occurance of the EOS token
+        # If EOS token is found, keep only the tokens before EOS
+        if eoc_idx.nelement() > 0:
+            eoc_idx = eoc_idx[0].item()
+            tokens = tokens[:eoc_idx]
+
+        # Find the Start of caption token's index
+        boc_idx = (tokens == self.CAPTION_START).nonzero(as_tuple=True)[0]   # this gets the first occurance of the EOS token
+        # If EOS token is found, keep only the tokens before EOS
+        if boc_idx.nelement() > 0:
+            boc_idx = boc_idx[0].item()
+            tokens = tokens[boc_idx:]
+        return tokens
+
+
+
+    
+
     def decode_labels(self, tokens):
         PAD_TOKEN = CFG.pad_idx
         if isinstance(tokens, list):

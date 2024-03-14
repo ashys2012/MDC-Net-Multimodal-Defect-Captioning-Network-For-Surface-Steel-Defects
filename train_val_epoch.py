@@ -43,7 +43,6 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         #Classification Accuracy calculations#
         final_predicted_classes = tokenizer.decode_labels(predicted_classes)     #The shape of  final predicted classes value is torch.Size([64])
-        print("The final_predicted_classes value is", final_predicted_classes)
         # Accuracy calculation might need to account for PAD_TOKENs
         valid_indices = final_predicted_classes != CFG.pad_idx                   # Ignore PAD_TOKEN in accuracy calculation
         train_accuracy_with_no_penalty = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
@@ -53,7 +52,9 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         #BLEU score calculations for captions
 
-
+        captions_preds = tokenizer.decode_captions(preds)             #The shape of captions_preds is torch.Size([64, 99])
+        print("The shape of captions_preds is", captions_preds.shape)
+        print("The captions_preds is", captions_preds)
         decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(preds, tokenizer)  # Adapt this to match your actual decoding function
         # print("The decoded preditions of bbox is ", decoded_pred_bboxes)
         # print("The decoded preditions of labels is ", decoded_lables)

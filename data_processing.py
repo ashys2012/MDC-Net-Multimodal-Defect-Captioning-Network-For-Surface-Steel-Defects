@@ -402,7 +402,8 @@ class Tokenizer:
             first_labels.append(first_label)
         return torch.tensor(first_labels, device=tokens.device)
         
-    
+    #you can get alternate approach to extract the predicted labels in https://www.notion.so/Alternate-Label_loss-488ab964219a4f00a9fa22e066bc3886
+    #this alternate aproach does not have pad_idx and uses 0 score probability to get the label
     def extract_predicted_labels_with_logits(self, logits):
         PAD_TOKEN = CFG.pad_idx
         LABEL_START, LABEL_END = 258, 263

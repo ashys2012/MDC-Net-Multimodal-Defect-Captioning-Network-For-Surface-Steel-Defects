@@ -48,18 +48,10 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         valid_indices = final_predicted_classes != CFG.pad_idx                   # Ignore PAD_TOKEN in accuracy calculation
         train_accuracy_with_no_penalty = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
         train_accuracy = (final_predicted_classes == ground_truth_labels) & valid_indices
-        train_accuracy_with_penalty = train_accuracy.float().mean()
-        print(f"train_accuracy_with_no_penalty: {train_accuracy_with_no_penalty.item()}")
-        print(f"train_accuracy_with_penalty: {train_accuracy_with_penalty.item()}")
-# 
-        print("The shape of final_predicted_classes is", final_predicted_classes.shape)
-        print("THe shape of ground_truth_labels is", ground_truth_labels.shape)
-        print("The valid_indices value is", valid_indices)
-        print("The ground_truth_labels value is", ground_truth_labels)
-        # accuracy = (final_predicted_classes == ground_truth_labels).float().mean()
-        # print(f"Accuracy: {accuracy.item()}")
+        train_accuracy_with_penalty = train_accuracy.float().mean()              #This accuracy even counts if ther is no predictions of labels
+        # To print the accuracy you need to use item() at the end.
 
-
+        #BLEU score calculations for captions
 
 
         decoded_lables,decoded_pred_bboxes, decoded_captions = extract_predictions(preds, tokenizer)  # Adapt this to match your actual decoding function

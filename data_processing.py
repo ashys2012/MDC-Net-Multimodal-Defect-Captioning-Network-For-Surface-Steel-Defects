@@ -9,6 +9,8 @@ from functools import partial
 import cv2
 from allied_files import CFG
 spacy_eng = spacy.load('en_core_web_sm') 
+from torch.nn.utils.rnn import pad_sequence
+
 
 class Vocabulary:
     def __init__(self, freq_threshold):
@@ -410,6 +412,86 @@ class Tokenizer:
 
 
 
+
+
+    def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+
+        if isinstance(pred_seq, list):
+            pred_seq = torch.tensor(pred_seq, device=CFG.device)
+
+        pred_seq = pred_seq.clone().detach()
+
+        
+        if pred_seq.numel() == 0:
+            return [], [], ""
+        
+        # If tokens tensor is scalar, add a dimension
+        if pred_seq.dim() == 0:               
+            pred_seq = pred_seq.unsqueeze(0)
+        
+        # Remove only PAD tokens initially
+        #pred_seq = pred_seq[pred_seq != self.PAD_code]
+        """
+        Decode bounding boxes from the predicted sequence, ensuring they follow a label token
+        and are within the valid range and structure: caption end, label, bbox coordinates, ..., EOS.
+        Outputs a padded 3D tensor for compatibility with batches having variable numbers of bounding boxes.
+        
+        :param pred_seq: Tensor of predicted sequences (batch_size, sequence_length).
+        :param caption_end_token: The token indicating the end of captions (EOC).
+        :param label_start: The starting index for label tokens.
+        :param label_end: The ending index for label tokens.
+        :param eos_token: The EOS token indicating the end of the sequence.
+        :return: A 3D tensor containing decoded bboxes and labels, organized per image, with padding.
+        """
+        all_decoded_bboxes = []
+
+
+        for seq in pred_seq:
+            print(seq.shape)
+            decoded_bboxes = []
+            # Find the end of the caption
+            eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
+            if len(eoc_idx) > 0:
+                start_idx = eoc_idx[0].item() + 1  # Start after the caption end token
+            else:
+                start_idx = 0  # Default to start if EOC token is not found
+
+            i = start_idx
+            while i < len(seq) - 4:  # Ensure room for label + bbox coordinates
+                token = seq[i].item()
+                # Check if the token is a label token
+                if label_start <= token <= label_end:
+                    # Extract potential bbox coordinates following the label
+                    bbox = seq[i + 1:i + 5]
+                    # Validate bbox: ensure coordinates are within expected range and form a valid bbox
+                    if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                        decoded_bboxes.append(bbox)
+                    i += 5  # Move past this bbox sequence
+                elif token == eos_token:
+                    break  # End of sequence
+                else:
+                    i += 1  # Continue to next token if not a label or EOS
+
+            # Convert list of tensors to a tensor for current sequence
+            if decoded_bboxes:
+                decoded_bboxes = torch.stack(decoded_bboxes)
+            else:
+                # Use a dummy tensor with shape [1, 4] filled with zeros if no bboxes are found
+                decoded_bboxes = torch.zeros(1, 4)
+            all_decoded_bboxes.append(decoded_bboxes)
+
+        # Pad sequences to have the same length
+        padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
+
+        return padded_bboxes
+
+  
+
+
+
+
+
+
     
 
     def decode_labels(self, tokens):
@@ -501,3 +583,12 @@ def top_k_sampling(logits, k):
     logits[indices_to_remove] = -float('Inf')
     probs = torch.softmax(logits, dim=-1)
     return torch.multinomial(probs, 1)
+
+def extract_tokens(pred_probs):
+    """
+    Extract the most probable tokens from the predicted probabilities.
+
+    :param pred_probs: Tensor of predicted probabilities (batch_size, sequence_length, vocabulary).
+    :return: Tensor of selected token indices (batch_size, sequence_length).
+    """
+    return torch.argmax(pred_probs, dim=-1)

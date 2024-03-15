@@ -2,7 +2,7 @@ import torch
 from tqdm import tqdm
 from allied_files import CFG, AvgMeter, get_lr
 from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss, extract_predictions,  calculate_iou, iou_loss_individual
-from data_processing import Tokenizer, Vocabulary, top_k_sampling
+from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_tokens
 #torch.set_printoptions(profile="full")
 import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu
@@ -53,10 +53,10 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         # To print the accuracy you need to use item() at the end.
 
         #BLEU score calculations for captions
-        captions = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+        tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
         caption_grnd_truth = tokenizer.decode_captions(y_expected)             #The shape of caption_grnd_truth is torch.Size([64, 99]
 
-        captions_preds = tokenizer.decode_captions(captions)             #The shape of captions_preds is torch.Size([64, 99])
+        captions_preds = tokenizer.decode_captions(tokens_caps_bbox)             #The shape of captions_preds is torch.Size([64, 99])
         print("The shape of captions_preds is", captions_preds.shape)
         print("The captions_preds is", captions_preds)
         print("The shape of caption_grnd_truth is", caption_grnd_truth.shape)
@@ -73,6 +73,11 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
                            smoothing_function=chencherry.method1)
 
         print("BLEU Score:", bleu_score)
+
+        #IoU loss calculations
+        predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)           
+
+
 
 
 

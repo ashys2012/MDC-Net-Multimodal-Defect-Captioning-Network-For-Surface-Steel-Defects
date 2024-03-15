@@ -480,17 +480,21 @@ class Tokenizer:
                 decoded_bboxes = torch.zeros(1, 4)
             all_decoded_bboxes.append(decoded_bboxes)
 
+            for i, bboxes_tensor in enumerate(all_decoded_bboxes):
+                if bboxes_tensor.size(0) > 1:  # Check if there are decoded bboxes
+                    bboxes_np = bboxes_tensor.cpu().numpy() 
+                    bboxes_dequantized_np = self.dequantize(bboxes_np)
+                    all_decoded_bboxes[i] = torch.tensor(bboxes_dequantized_np, device=bboxes_tensor.device)
+                else:
+                    # Handle the case where there are no bboxes or only dummy bboxes
+                    all_decoded_bboxes[i] = torch.zeros_like(bboxes_tensor).float()
+
         # Pad sequences to have the same length
         padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
 
         return padded_bboxes
 
   
-
-
-
-
-
 
     
 

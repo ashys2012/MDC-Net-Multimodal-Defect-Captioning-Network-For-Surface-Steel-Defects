@@ -7,6 +7,7 @@ from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_token
 import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
+from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
@@ -57,10 +58,10 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         caption_grnd_truth = tokenizer.decode_captions(y_expected)             #The shape of caption_grnd_truth is torch.Size([64, 99]
 
         captions_preds = tokenizer.decode_captions(tokens_caps_bbox)             #The shape of captions_preds is torch.Size([64, 99])
-        print("The shape of captions_preds is", captions_preds.shape)
-        print("The captions_preds is", captions_preds)
-        print("The shape of caption_grnd_truth is", caption_grnd_truth.shape)
-        print("The caption_grnd_truth is", caption_grnd_truth)
+        # print("The shape of captions_preds is", captions_preds.shape)
+        # print("The captions_preds is", captions_preds)
+        # print("The shape of caption_grnd_truth is", caption_grnd_truth.shape)
+        # print("The caption_grnd_truth is", caption_grnd_truth)
         # Convert tensors to lists of integers (token IDs)
         captions_preds_list = captions_preds.cpu().tolist()
         caption_grnd_truth_list = [caption_grnd_truth.cpu().tolist()]  # Note: ground truth should be a list of references, hence the extra []
@@ -75,8 +76,25 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         print("BLEU Score:", bleu_score)
 
         #IoU loss calculations
-        predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)           
+        predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox) 
+        ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)
 
+        #print("The predicted_bboxes is", predicted_bboxes)
+        # print("the shape of predicted_bboxes is", predicted_bboxes.shape)
+        # #print("The ground_truth_bboxes is", ground_truth_bboxes)          
+        # print("the shape of ground_truth_bboxes is", ground_truth_bboxes.shape)
+
+        iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
+
+        print("The iou_score is", iou_score)
+
+        max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
+        # Ensure there's at least one IoU score to avoid division by zero
+        if len(max_ious) > 0:
+            average_iou_score = sum(max_ious) / len(max_ious)
+            print("Average IoU score:", average_iou_score)
+        else:
+            print("No IoU scores available to calculate average.")
 
 
 

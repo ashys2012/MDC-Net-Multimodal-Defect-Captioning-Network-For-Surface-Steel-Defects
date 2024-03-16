@@ -21,7 +21,7 @@ seed_everything(seed=42)
 #wandb.init(project="pix_2_seq")
 
 from data_processing import Tokenizer, Vocabulary, get_loaders
-from train_val_epoch import train_epoch, valid_epoch_bbox
+from updated_train_val_epoch import train_epoch, valid_epoch_bbox
 from allied_files import CFG, concat_gt
 from iou_bbox import iou_loss_individual
 
@@ -128,36 +128,44 @@ model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
 
-
-        
-
-def train_eval(model, train_loader, valid_loader, criterion, optimizer, lr_scheduler, step, logger):
+def train_eval(model, train_loader, valid_loader, criterion, optimizer, lr_scheduler, step, logger, tokenizer, iou_loss_individual, CFG):
     best_metric = float('inf')  # Adjust based on whether lower or higher is better for your primary metric
     epochs_since_improvement = 0
     patience = CFG.patience
+
+    # Adjusting warmup steps to be based on epochs rather than total steps
+    warmup_epochs = 10
+    total_epochs = CFG.epochs
+    num_training_steps_per_epoch = len(train_loader)
+    num_warmup_steps = warmup_epochs * num_training_steps_per_epoch
+
+    # Adjust lr_scheduler for warmup
+    lr_scheduler = get_linear_schedule_with_warmup(optimizer, 
+                                                   num_warmup_steps=num_warmup_steps, 
+                                                   num_training_steps=total_epochs * num_training_steps_per_epoch)
 
     for epoch in range(CFG.epochs):
         print(f"Epoch {epoch + 1}")
 
         # Training phase
-        train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger=logger)
+        train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger=logger, iou_loss_weight=CFG.iou_loss_weight)
 
         # Validation phase with correct arguments
-        # Note: Make sure to only call valid_epoch_bbox once with the correct set of arguments
-        valid_loss, avg_iou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_individual, CFG)
+        valid_loss, avg_iou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_individual, CFG, CFG.iou_loss_weight)
 
         print(f"Train Loss: {train_loss:.3f}, Valid Loss: {valid_loss:.3f}, Avg IoU: {avg_iou:.3f}, Total Loss: {total_loss:.3f}")
 
-        # Example: Check for improvement based on average IoU
-        if avg_iou < best_metric:  # Assuming lower is better; adjust the comparison operator as needed
+        # Example: Check for improvement based on IoU (assuming higher is better; adjust accordingly)
+        if avg_iou > best_metric:
             best_metric = avg_iou
             epochs_since_improvement = 0  # Reset counter
-            save_path = 'output_path/best_model_by_iou_1.pth'
+            save_path = 'output_path/best_model_by_iou.pth'
             torch.save(model.state_dict(), save_path)
             print("Saved Model with Best Average IoU")
         else:
             epochs_since_improvement += 1
 
+        # Adjust lr_scheduler step if it's supposed to happen every epoch
         if lr_scheduler is not None and step == 'epoch':
             lr_scheduler.step()
 
@@ -168,24 +176,94 @@ def train_eval(model, train_loader, valid_loader, criterion, optimizer, lr_sched
 
         # Optionally log other metrics or details here
 
-
+# Assumptions:
+# - You have defined `CFG` with attributes like `lr`, `batch_size`, `epochs`, `pad_idx`, `iou_loss_weight`, `patience` etc.
+# - `get_linear_schedule_with_warmup` is imported from the correct library and used properly here.
+# - `train_epoch` and `valid_epoch_bbox` functions are updated to handle IoU loss calculation and its weight.
+# - `model`, `train_loader`, `valid_loader`, `tokenizer`, and other necessary variables and modules (like `torch`, `nn`, etc.) are properly defined and imported.
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
 
-num_training_steps = CFG.epochs * (len(train_loader.dataset) // CFG.batch_size)
-num_warmup_steps = int(0.1 * num_training_steps)
-lr_scheduler = get_linear_schedule_with_warmup(optimizer,
-                                               num_training_steps=num_training_steps,
-                                               num_warmup_steps=num_warmup_steps)
-
-criterion = nn.CrossEntropyLoss(ignore_index=CFG.pad_idx) #alpha=1, gamma=2, 
+criterion = nn.CrossEntropyLoss(ignore_index=CFG.pad_idx)
 
 train_eval(model,
            train_loader,
            valid_loader,
            criterion,
            optimizer,
-           lr_scheduler=lr_scheduler,
+           lr_scheduler=None,  # The lr_scheduler is now initialized inside the function to handle warmup steps based on epochs.
            step='batch',
-           logger=None)
+           logger=None,
+           tokenizer=tokenizer,
+           iou_loss_individual=iou_loss_individual,
+           CFG=CFG)
+
+        
+
+
+
+
+
+"""
+THe below is the old code
+
+
+"""
+# def train_eval(model, train_loader, valid_loader, criterion, optimizer, lr_scheduler, step, logger):
+#     best_metric = float('inf')  # Adjust based on whether lower or higher is better for your primary metric
+#     epochs_since_improvement = 0
+#     patience = CFG.patience
+
+#     for epoch in range(CFG.epochs):
+#         print(f"Epoch {epoch + 1}")
+
+#         # Training phase
+#         train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger=logger)
+
+#         # Validation phase with correct arguments
+#         # Note: Make sure to only call valid_epoch_bbox once with the correct set of arguments
+#         valid_loss, avg_iou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_individual, CFG)
+
+#         print(f"Train Loss: {train_loss:.3f}, Valid Loss: {valid_loss:.3f}, Avg IoU: {avg_iou:.3f}, Total Loss: {total_loss:.3f}")
+
+#         # Example: Check for improvement based on average IoU
+#         if avg_iou < best_metric:  # Assuming lower is better; adjust the comparison operator as needed
+#             best_metric = avg_iou
+#             epochs_since_improvement = 0  # Reset counter
+#             save_path = 'output_path/best_model_by_iou_1.pth'
+#             torch.save(model.state_dict(), save_path)
+#             print("Saved Model with Best Average IoU")
+#         else:
+#             epochs_since_improvement += 1
+
+#         if lr_scheduler is not None and step == 'epoch':
+#             lr_scheduler.step()
+
+#         # Early stopping check
+#         if epochs_since_improvement >= patience:
+#             print("Early stopping triggered after no improvement for", patience, "epochs.")
+#             break
+
+#         # Optionally log other metrics or details here
+
+
+
+# optimizer = torch.optim.AdamW(model.parameters(), lr=CFG.lr, weight_decay=CFG.weight_decay)
+
+# num_training_steps = CFG.epochs * (len(train_loader.dataset) // CFG.batch_size)
+# num_warmup_steps = int(0.1 * num_training_steps)
+# lr_scheduler = get_linear_schedule_with_warmup(optimizer,
+#                                                num_training_steps=num_training_steps,
+#                                                num_warmup_steps=num_warmup_steps)
+
+# criterion = nn.CrossEntropyLoss(ignore_index=CFG.pad_idx) #alpha=1, gamma=2, 
+
+# train_eval(model,
+#            train_loader,
+#            valid_loader,
+#            criterion,
+#            optimizer,
+#            lr_scheduler=lr_scheduler,
+#            step='batch',
+#            logger=None)
 

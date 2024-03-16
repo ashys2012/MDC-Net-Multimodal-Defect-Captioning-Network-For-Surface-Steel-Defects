@@ -7,7 +7,7 @@ from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_token
 import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
-from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou
+from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou,giou_loss
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
@@ -16,10 +16,10 @@ CFG.bos_idx = tokenizer.BOS_code
 CFG.pad_idx = tokenizer.PAD_code
 
 
-def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=None, iou_loss_weight=0.5):
+def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=None, iou_loss_weight=0.7):
     model.train()
     loss_meter = AvgMeter()
-    iou_loss_meter = AvgMeter()  # For tracking IoU loss separately
+    giou_loss_meter = AvgMeter()  # For tracking IoU loss separately
     total_loss_meter = AvgMeter()  # For tracking the combined total loss
     tqdm_object = tqdm(train_loader, total=len(train_loader))
 
@@ -38,19 +38,19 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         predicted_classes = torch.argmax(preds, dim=-1)                          #The shape of predicted_classes is torch.Size([64, 99])
 
 
-        #Label cross entropy loss calculations
-        predicted_labels = tokenizer.extract_predicted_labels_with_logits(preds) #The shape of predicted_labels is torch.Size([64, 305]) --[batch_size, num_classes]
-        ground_truth_labels = tokenizer.decode_labels(y_expected)                #The shape of ground_truth_labels is torch.Size([64])
-        predicted_labels = predicted_labels.float()
-        Label_loss = criterion(predicted_labels, ground_truth_labels)            # CFG.pad_idx is the PAD_TOKEN in your decode_labels function
+        # #Label cross entropy loss calculations
+        # predicted_labels = tokenizer.extract_predicted_labels_with_logits(preds) #The shape of predicted_labels is torch.Size([64, 305]) --[batch_size, num_classes]
+        # ground_truth_labels = tokenizer.decode_labels(y_expected)                #The shape of ground_truth_labels is torch.Size([64])
+        # predicted_labels = predicted_labels.float()
+        # Label_loss = criterion(predicted_labels, ground_truth_labels)            # CFG.pad_idx is the PAD_TOKEN in your decode_labels function
 
-        #Classification Accuracy calculations#
-        final_predicted_classes = tokenizer.decode_labels(predicted_classes)     #The shape of  final predicted classes value is torch.Size([64])
-        # Accuracy calculation might need to account for PAD_TOKENs
-        valid_indices = final_predicted_classes != CFG.pad_idx                   # Ignore PAD_TOKEN in accuracy calculation
-        train_accuracy_with_no_penalty = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
-        train_accuracy = (final_predicted_classes == ground_truth_labels) & valid_indices
-        train_accuracy_with_penalty = train_accuracy.float().mean()              #This accuracy even counts if ther is no predictions of labels
+        # #Classification Accuracy calculations#
+        # final_predicted_classes = tokenizer.decode_labels(predicted_classes)     #The shape of  final predicted classes value is torch.Size([64])
+        # # Accuracy calculation might need to account for PAD_TOKENs
+        # valid_indices = final_predicted_classes != CFG.pad_idx                   # Ignore PAD_TOKEN in accuracy calculation
+        # train_accuracy_with_no_penalty = (final_predicted_classes[valid_indices] == ground_truth_labels[valid_indices]).float().mean()
+        # train_accuracy = (final_predicted_classes == ground_truth_labels) & valid_indices
+        # train_accuracy_with_penalty = train_accuracy.float().mean()              #This accuracy even counts if ther is no predictions of labels
         # To print the accuracy you need to use item() at the end.
 
         #BLEU score calculations for captions
@@ -86,7 +86,7 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
 
-        print("The iou_score is", iou_score)
+        #print("The iou_score is", iou_score)
 
         max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
         # Ensure there's at least one IoU score to avoid division by zero
@@ -96,6 +96,10 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         else:
             print("No IoU scores available to calculate average.")
 
+
+
+        giou_bbox_loss = giou_loss(predicted_bboxes, ground_truth_bboxes)
+        print("THe giou_bbox_loss is", giou_bbox_loss)
 
 
 
@@ -158,7 +162,9 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         l1_norm = sum(p.abs().sum() for p in model.parameters())
         
         # Combine losses
-        total_loss = ce_loss + l1_lambda * l1_norm + iou_loss_weight * iou_loss_val
+        ce_loss_weight = 0.3
+        total_loss = ce_loss_weight * ce_loss + l1_lambda * l1_norm + iou_loss_weight * giou_bbox_loss
+
 
         optimizer.zero_grad()
         total_loss.backward()
@@ -169,13 +175,14 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         # Update loss meters
         loss_meter.update(ce_loss.item(), x.size(0))
-        iou_loss_meter.update(iou_loss_val.item(), x.size(0))
+        #iou_loss_meter.update(iou_loss_val.item(), x.size(0))
+        giou_loss_meter.update(giou_bbox_loss.item(), x.size(0))
         total_loss_meter.update(total_loss.item(), x.size(0))
 
         lr = get_lr(optimizer)
-        tqdm_object.set_postfix(train_loss=total_loss_meter.avg, iou_loss=iou_loss_meter.avg, lr=f"{lr:.6f}")
+        tqdm_object.set_postfix(train_loss=total_loss_meter.avg, iou_loss=giou_loss_meter.avg, lr=f"{lr:.6f}")
         if logger is not None:
-            logger.log({"train_step_loss": total_loss_meter.avg, "iou_loss": iou_loss_meter.avg, 'lr': lr})
+            logger.log({"train_step_loss": total_loss_meter.avg, "iou_loss": giou_loss_meter.avg, 'lr': lr})
     
 
     

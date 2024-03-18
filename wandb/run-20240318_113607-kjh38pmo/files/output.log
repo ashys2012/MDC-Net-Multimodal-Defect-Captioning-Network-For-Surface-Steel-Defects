@@ -1,0 +1,91 @@
+Shape of self.encoder_pos_embed: torch.Size([1, 196, 512])
+skipping pos_embed...
+skipping pos_embed...
+num_training_steps is: 9000
+num_warmup_steps is: 900
+Epoch 1/200
+  0%|                                                                                                                                            | 0/45 [00:00<?, ?it/s]
+BLEU Score: 0.0004429106611939321
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.5625, device='cuda:0')
+THe giou_bbox_score is [tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0')]
+BLEU Score: 0.0004055382417906339
+Average IoU score: nan
+
+  2%|█▉                                                                                     | 1/45 [00:02<02:01,  2.77s/it, iou_loss=2.56, lr=0.000000, train_loss=4.02]
+THe giou_bbox_score is [tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([[0.2656, 0.4810]], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0')]
+BLEU Score: 0
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.1634, device='cuda:0')
+
+  4%|███▊                                                                                   | 2/45 [00:04<01:31,  2.12s/it, iou_loss=2.32, lr=0.000000, train_loss=3.83]
+BLEU Score: 0.0002299884818003046
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.1875, device='cuda:0')
+
+  7%|█████▊                                                                                 | 3/45 [00:06<01:20,  1.93s/it, iou_loss=2.27, lr=0.000000, train_loss=3.79]
+BLEU Score: 0.00018391734559119517
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.0938, device='cuda:0')
+
+ 11%|█████████▋                                                                             | 5/45 [00:09<01:11,  1.78s/it, iou_loss=2.22, lr=0.000000, train_loss=3.74]
+BLEU Score: 0.00011640625124051226
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.1250, device='cuda:0')
+
+ 13%|███████████▋                                                                            | 6/45 [00:11<01:08,  1.75s/it, iou_loss=2.2, lr=0.000000, train_loss=3.73]
+BLEU Score: 0.00042746158886407634
+Average IoU score: nan
+THe giou_bbox_loss is tensor(1.9726, device='cuda:0')
+
+ 16%|█████████████▋                                                                          | 7/45 [00:12<01:05,  1.72s/it, iou_loss=2.17, lr=0.000000, train_loss=3.7]
+BLEU Score: 0.00016965450281073916
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.2568, device='cuda:0')
+
+ 18%|███████████████▍                                                                       | 8/45 [00:14<01:05,  1.77s/it, iou_loss=2.18, lr=0.000000, train_loss=3.71]
+BLEU Score: 0.00026888044037744294
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.0938, device='cuda:0')
+THe giou_bbox_score is [tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0'), tensor([], device='cuda:0')]
+BLEU Score: 0.0001489970833927238
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.6119, device='cuda:0')
+
+ 20%|█████████████████▌                                                                      | 9/45 [00:16<01:02,  1.75s/it, iou_loss=2.17, lr=0.000000, train_loss=3.7]
+BLEU Score: 0.00019381806325085278
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.1788, device='cuda:0')
+
+ 22%|███████████████████                                                                   | 10/45 [00:18<01:00,  1.73s/it, iou_loss=2.21, lr=0.000000, train_loss=3.73]
+BLEU Score: 0.00014300604172151624
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.4375, device='cuda:0')
+
+ 27%|██████████████████████▉                                                               | 12/45 [00:21<00:56,  1.71s/it, iou_loss=2.23, lr=0.000000, train_loss=3.75]
+BLEU Score: 0.0003067070786140293
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.4767, device='cuda:0')
+
+ 29%|████████████████████████▊                                                             | 13/45 [00:23<00:54,  1.70s/it, iou_loss=2.25, lr=0.000000, train_loss=3.76]
+BLEU Score: 0.0006017909097722214
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.4688, device='cuda:0')
+
+ 31%|██████████████████████████▊                                                           | 14/45 [00:24<00:52,  1.70s/it, iou_loss=2.27, lr=0.000000, train_loss=3.77]
+BLEU Score: 0.0005485004004849027
+Average IoU score: nan
+THe giou_bbox_loss is tensor(2.2188, device='cuda:0')
+ 31%|██████████████████████████▊                                                           | 14/45 [00:25<00:56,  1.84s/it, iou_loss=2.27, lr=0.000000, train_loss=3.77]
+Traceback (most recent call last):
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 208, in <module>
+    train_eval(model,
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 166, in train_eval
+    train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger = None, iou_loss_weight=0.8)
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/train_val_epoch.py", line 124, in train_epoch
+    _, gt_bboxes, _ = extract_ground_truth(y_expected_adjusted, tokenizer)  # You need to implement this based on your dataset
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/iou_bbox.py", line 137, in extract_ground_truth
+    labels, bboxes, caption = tokenizer.decode(tokens)
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/data_processing.py", line 321, in decode
+    eos_idx = (tokens == self.EOS_code).nonzero(as_tuple=True)[0]   # this gets the first occurance of the EOS token
+KeyboardInterrupt

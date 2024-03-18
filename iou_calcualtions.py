@@ -1,5 +1,6 @@
 import torch
 
+from torchvision.ops import box_iou
 
 def bbox_iou(box1, box2):
     """
@@ -72,6 +73,37 @@ def calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes):
             # Handle cases with no predictions or no ground truths by skipping or assigning default values
 
     return max_ious
+
+
+def calculate_batch_max_iou_torchvision(predicted_bboxes, ground_truth_bboxes):
+    batch_size = predicted_bboxes.size(0)
+    max_ious = []
+
+    # Determine the device to use based on the predicted_bboxes tensor
+    device = predicted_bboxes.device
+
+    for i in range(batch_size):
+        # Remove the middle dimension for predicted_bboxes since it's 1
+        pred_boxes = predicted_bboxes[i].squeeze(0).to(device)  # Ensure pred_boxes is on the correct device
+        
+        gt_boxes = ground_truth_bboxes[i].to(device)  # Ensure gt_boxes is on the correct device
+
+        # Ensure pred_boxes and gt_boxes are 2-dimensional
+        if pred_boxes.dim() == 1:
+            pred_boxes = pred_boxes.unsqueeze(0)  # Adds an extra dimension if it's needed
+
+        if gt_boxes.dim() == 1:
+            gt_boxes = gt_boxes.unsqueeze(0)  # Adds an extra dimension if it's needed
+
+        # Calculate IoU scores only if both sets of boxes are non-empty
+        if pred_boxes.nelement() > 0 and gt_boxes.nelement() > 0:
+            iou_scores = box_iou(pred_boxes, gt_boxes)
+            iou_scores = torch.nan_to_num(iou_scores, nan=0.0)
+            max_iou, _ = torch.max(iou_scores, dim=1)  # Max IoU for each predicted box
+            max_ious.extend(max_iou.tolist())  # Convert to list and store
+        #print("Iou scores inside calculate_batch_max_iou_torchvision:", iou_scores)
+    return max_ious
+
 
 
 

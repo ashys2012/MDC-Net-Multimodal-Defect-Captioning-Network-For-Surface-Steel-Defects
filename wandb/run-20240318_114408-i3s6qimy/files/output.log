@@ -1,0 +1,28 @@
+Shape of self.encoder_pos_embed: torch.Size([1, 196, 512])
+skipping pos_embed...
+skipping pos_embed...
+num_training_steps is: 9000
+num_warmup_steps is: 900
+Epoch 1/200
+  0%|                                                                                                                                            | 0/45 [00:00<?, ?it/s]
+BLEU Score: 0.0004429106611939321
+Average IoU score: 0.0
+THe giou_bbox_loss is tensor(2.5625, device='cuda:0')
+
+  2%|█▉                                                                                     | 1/45 [00:02<02:07,  2.89s/it, iou_loss=2.56, lr=0.000000, train_loss=4.02]
+BLEU Score: 0.0004055382417906339
+Average IoU score: 0.015905944630503654
+THe giou_bbox_loss is tensor(2.0821, device='cuda:0')
+  2%|█▉                                                                                     | 1/45 [00:04<03:11,  4.34s/it, iou_loss=2.56, lr=0.000000, train_loss=4.02]
+Traceback (most recent call last):
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 208, in <module>
+    train_eval(model,
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 166, in train_eval
+    train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger = logger, iou_loss_weight=0.8)
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/train_val_epoch.py", line 182, in train_epoch
+    total_loss.backward()
+  File "/home/achazhoor/anaconda3/envs/t_v_n/lib/python3.8/site-packages/torch/_tensor.py", line 522, in backward
+    torch.autograd.backward(
+  File "/home/achazhoor/anaconda3/envs/t_v_n/lib/python3.8/site-packages/torch/autograd/__init__.py", line 266, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+KeyboardInterrupt

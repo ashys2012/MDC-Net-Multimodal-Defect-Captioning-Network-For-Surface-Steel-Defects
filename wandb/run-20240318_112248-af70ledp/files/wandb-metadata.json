@@ -1,0 +1,109 @@
+{
+    "os": "Linux-5.4.0-175-generic-x86_64-with-glibc2.17",
+    "python": "3.8.18",
+    "heartbeatAt": "2024-03-18T11:22:49.255387",
+    "startedAt": "2024-03-18T11:22:48.483120",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py",
+    "codePath": "trail_01.py",
+    "git": {
+        "remote": "https://github.com/ashys2012/pix_2_seq_with_captions_march.git",
+        "commit": "2a5c72cbe3365e53ba467a42ceb47d0f10a40188"
+    },
+    "email": "ashys2012@gmail.co",
+    "root": "/mnt/sdb/2024/pix_2_seq_with_captions_march",
+    "host": "AST0005293",
+    "username": "achazhoor",
+    "executable": "/home/achazhoor/anaconda3/envs/t_v_n/bin/python",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 1.4608333333333334,
+        "min": 1200.0,
+        "max": 4000.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 1.789,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.199,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.239,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.342,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.226,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.257,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 2.868,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.199,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.346,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.403,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.3,
+            "min": 1200.0,
+            "max": 4000.0
+        },
+        {
+            "current": 1.362,
+            "min": 1200.0,
+            "max": 4000.0
+        }
+    ],
+    "disk": {
+        "total": 457.3192138671875,
+        "used": 402.33746337890625
+    },
+    "gpu": "Quadro RTX 5000",
+    "gpu_count": 2,
+    "gpu_devices": [
+        {
+            "name": "Quadro RTX 5000",
+            "memory_total": 17179869184
+        },
+        {
+            "name": "Quadro RTX 5000",
+            "memory_total": 17179869184
+        }
+    ],
+    "memory": {
+        "total": 31.255271911621094
+    }
+}

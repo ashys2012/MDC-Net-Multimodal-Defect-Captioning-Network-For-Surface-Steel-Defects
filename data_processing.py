@@ -414,84 +414,88 @@ class Tokenizer:
 
 
 
-    def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+    # def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
 
-        if isinstance(pred_seq, list):
-            pred_seq = torch.tensor(pred_seq, device=CFG.device)
+    #     if isinstance(pred_seq, list):
+    #         pred_seq = torch.tensor(pred_seq, device=CFG.device)
 
-        pred_seq = pred_seq.clone().detach()
+    #     pred_seq = pred_seq.clone().detach()
 
         
-        if pred_seq.numel() == 0:
-            return [], [], ""
+    #     if pred_seq.numel() == 0:
+    #         return [], [], ""
         
-        # If tokens tensor is scalar, add a dimension
-        if pred_seq.dim() == 0:               
-            pred_seq = pred_seq.unsqueeze(0)
+    #     # If tokens tensor is scalar, add a dimension
+    #     if pred_seq.dim() == 0:               
+    #         pred_seq = pred_seq.unsqueeze(0)
         
-        # Remove only PAD tokens initially
-        #pred_seq = pred_seq[pred_seq != self.PAD_code]
-        """
-        Decode bounding boxes from the predicted sequence, ensuring they follow a label token
-        and are within the valid range and structure: caption end, label, bbox coordinates, ..., EOS.
-        Outputs a padded 3D tensor for compatibility with batches having variable numbers of bounding boxes.
+    #     # Remove only PAD tokens initially
+    #     #pred_seq = pred_seq[pred_seq != self.PAD_code]
+    #     """
+    #     Decode bounding boxes from the predicted sequence, ensuring they follow a label token
+    #     and are within the valid range and structure: caption end, label, bbox coordinates, ..., EOS.
+    #     Outputs a padded 3D tensor for compatibility with batches having variable numbers of bounding boxes.
         
-        :param pred_seq: Tensor of predicted sequences (batch_size, sequence_length).
-        :param caption_end_token: The token indicating the end of captions (EOC).
-        :param label_start: The starting index for label tokens.
-        :param label_end: The ending index for label tokens.
-        :param eos_token: The EOS token indicating the end of the sequence.
-        :return: A 3D tensor containing decoded bboxes and labels, organized per image, with padding.
-        """
-        all_decoded_bboxes = []
+    #     :param pred_seq: Tensor of predicted sequences (batch_size, sequence_length).
+    #     :param caption_end_token: The token indicating the end of captions (EOC).
+    #     :param label_start: The starting index for label tokens.
+    #     :param label_end: The ending index for label tokens.
+    #     :param eos_token: The EOS token indicating the end of the sequence.
+    #     :return: A 3D tensor containing decoded bboxes and labels, organized per image, with padding.
+    #     """
+    #     all_decoded_bboxes = []
 
 
-        for seq in pred_seq:
-            decoded_bboxes = []
-            # Find the end of the caption
-            eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
-            if len(eoc_idx) > 0:
-                start_idx = eoc_idx[0].item() + 1  # Start after the caption end token
-            else:
-                start_idx = 0  # Default to start if EOC token is not found
+    #     for seq in pred_seq:
+    #         decoded_bboxes = []
+    #         # Find the end of the caption
+    #         eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
+    #         if len(eoc_idx) > 0:
+    #             start_idx = eoc_idx[0].item() + 1  # Start after the caption end token
+    #         else:
+    #             start_idx = 0  # Default to start if EOC token is not found
 
-            i = start_idx
-            while i < len(seq) - 4:  # Ensure room for label + bbox coordinates
-                token = seq[i].item()
-                # Check if the token is a label token
-                if label_start <= token <= label_end:
-                    # Extract potential bbox coordinates following the label
-                    bbox = seq[i + 1:i + 5]
-                    # Validate bbox: ensure coordinates are within expected range and form a valid bbox
-                    if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
-                        decoded_bboxes.append(bbox)
-                    i += 5  # Move past this bbox sequence
-                elif token == eos_token:
-                    break  # End of sequence
-                else:
-                    i += 1  # Continue to next token if not a label or EOS
+    #         i = start_idx
+    #         while i < len(seq) - 4:  # Ensure room for label + bbox coordinates
+    #             token = seq[i].item()
+    #             # Check if the token is a label token
+    #             if label_start <= token <= label_end:
+    #                 # Extract potential bbox coordinates following the label
+    #                 bbox = seq[i + 1:i + 5]
+    #                 # Validate bbox: ensure coordinates are within expected range and form a valid bbox
+    #                 if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+    #                     decoded_bboxes.append(bbox)
+    #                 i += 5  # Move past this bbox sequence
+    #             elif token == eos_token:
+    #                 break  # End of sequence
+    #             else:
+    #                 i += 1  # Continue to next token if not a label or EOS
+    #         #print("The decoded bboxes are", decoded_bboxes)        #-----here the bbox is in consistent format
+    #         # Convert list of tensors to a tensor for current sequence
+    #         if decoded_bboxes:
+    #             decoded_bboxes = torch.stack(decoded_bboxes)
+    #         else:
+    #             # Use a dummy tensor with shape [1, 4] filled with zeros if no bboxes are found
+    #             decoded_bboxes = torch.zeros(1, 4)
+    #         #print("The decoded bboxes are", decoded_bboxes)       #----> here the bbox is in consistent format    
+    #         all_decoded_bboxes.append(decoded_bboxes)
+    #         print("The decoded bboxes are", all_decoded_bboxes)   #---> gives wrong grousn truth bbox
+    #         for i, bboxes_tensor in enumerate(all_decoded_bboxes):
+    #             if bboxes_tensor.size(0) > 1:  # Check if there are decoded bboxes
+    #                 bboxes_np = bboxes_tensor.cpu().numpy() 
+    #                 bboxes_dequantized_np = self.dequantize(bboxes_np)
+    #                 all_decoded_bboxes[i] = torch.tensor(bboxes_dequantized_np, device=bboxes_tensor.device)
+    #             else:
+    #                 # Handle the case where there are no bboxes or only dummy bboxes
+    #                 all_decoded_bboxes[i] = torch.zeros_like(bboxes_tensor).float()
 
-            # Convert list of tensors to a tensor for current sequence
-            if decoded_bboxes:
-                decoded_bboxes = torch.stack(decoded_bboxes)
-            else:
-                # Use a dummy tensor with shape [1, 4] filled with zeros if no bboxes are found
-                decoded_bboxes = torch.zeros(1, 4)
-            all_decoded_bboxes.append(decoded_bboxes)
+            
 
-            for i, bboxes_tensor in enumerate(all_decoded_bboxes):
-                if bboxes_tensor.size(0) > 1:  # Check if there are decoded bboxes
-                    bboxes_np = bboxes_tensor.cpu().numpy() 
-                    bboxes_dequantized_np = self.dequantize(bboxes_np)
-                    all_decoded_bboxes[i] = torch.tensor(bboxes_dequantized_np, device=bboxes_tensor.device)
-                else:
-                    # Handle the case where there are no bboxes or only dummy bboxes
-                    all_decoded_bboxes[i] = torch.zeros_like(bboxes_tensor).float()
+    #     # Pad sequences to have the same length
+    #     padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
+    #     #print("The padded bboxes are", padded_bboxes)
 
-        # Pad sequences to have the same length
-        padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
-
-        return padded_bboxes
+    #     return padded_bboxes
 
   
 
@@ -524,6 +528,81 @@ class Tokenizer:
             first_label = item_labels[0] if len(item_labels) > 0 else PAD_TOKEN  # Take first or None if no labels
             first_labels.append(first_label)
         return torch.tensor(first_labels, device=tokens.device)
+    
+    def adjust_bboxes_dimensions(self, bboxes_tensor):
+        """
+        Adjusts dequantized bounding boxes to their original dimensions.
+        """
+        bboxes_dequantized_np = self.dequantize(bboxes_tensor.cpu().numpy())
+        bboxes_dequantized_np[:, [0, 2]] = bboxes_dequantized_np[:, [0, 2]] * self.width
+        bboxes_dequantized_np[:, [1, 3]] = bboxes_dequantized_np[:, [1, 3]] * self.height
+        return torch.tensor(bboxes_dequantized_np, device=bboxes_tensor.device).float()
+
+    def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+        if isinstance(pred_seq, list):
+            pred_seq = torch.tensor(pred_seq, device=CFG.device)
+
+        pred_seq = pred_seq.clone().detach()
+
+        if pred_seq.numel() == 0:
+            return [], [], ""
+
+        if pred_seq.dim() == 0:
+            pred_seq = pred_seq.unsqueeze(0)
+
+        all_decoded_bboxes = []
+
+        for seq in pred_seq:
+            decoded_bboxes = []
+            eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
+            start_idx = eoc_idx[0].item() + 1 if len(eoc_idx) > 0 else 0
+
+            i = start_idx
+            while i < len(seq) - 4:
+                token = seq[i].item()
+                if label_start <= token <= label_end:
+                    bbox = seq[i + 1:i + 5]
+                    if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                        decoded_bboxes.append(bbox)
+                    i += 5
+                elif token == eos_token:
+                    break
+                else:
+                    i += 1
+
+            if decoded_bboxes:
+                decoded_bboxes = torch.stack(decoded_bboxes)
+                # Adjust bounding box dimensions directly after decoding
+                adjusted_bboxes = self.adjust_bboxes_dimensions(decoded_bboxes)
+                all_decoded_bboxes.append(adjusted_bboxes)
+            else:
+                all_decoded_bboxes.append(torch.zeros(1, 4, device=CFG.device))
+
+        padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
+        #print("The padded bboxes are", padded_bboxes)
+        return padded_bboxes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         
     #you can get alternate approach to extract the predicted labels in https://www.notion.so/Alternate-Label_loss-488ab964219a4f00a9fa22e066bc3886
     #this alternate aproach does not have pad_idx and uses 0 score probability to get the label

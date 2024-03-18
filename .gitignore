@@ -4,4 +4,9 @@
 output_path/
 output_path/*
 output_path
-
+/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1
+/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/*
+/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/
+output_1/
+output_1/*
+output_1

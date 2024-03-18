@@ -1,0 +1,24 @@
+Shape of self.encoder_pos_embed: torch.Size([1, 196, 512])
+skipping pos_embed...
+skipping pos_embed...
+num_training_steps is: 9000
+num_warmup_steps is: 900
+Epoch 1/200
+  0%|                                                                                                                                            | 0/45 [00:01<?, ?it/s]
+Traceback (most recent call last):
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 208, in <module>
+    train_eval(model,
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/trail_01.py", line 166, in train_eval
+    train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger = logger, iou_loss_weight=0.8)
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/train_val_epoch.py", line 93, in train_epoch
+    max_ious = calculate_batch_max_iou_torchvision(predicted_bboxes, ground_truth_bboxes)
+  File "/mnt/sdb/2024/pix_2_seq_with_captions_march/iou_calcualtions.py", line 98, in calculate_batch_max_iou_torchvision
+    iou_scores = box_iou(pred_boxes, gt_boxes)
+  File "/home/achazhoor/anaconda3/envs/t_v_n/lib/python3.8/site-packages/torchvision/ops/boxes.py", line 271, in box_iou
+    inter, union = _box_inter_union(boxes1, boxes2)
+  File "/home/achazhoor/anaconda3/envs/t_v_n/lib/python3.8/site-packages/torchvision/ops/boxes.py", line 244, in _box_inter_union
+    lt = torch.max(boxes1[:, None, :2], boxes2[:, :2])  # [N,M,2]
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+BLEU Score: 0.0004429106611939321
+the shape of predicted_bboxes is torch.Size([32, 1, 4])
+the shape of ground_truth_bboxes is torch.Size([32, 8, 4])

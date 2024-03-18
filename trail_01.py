@@ -180,7 +180,7 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
         if avg_giou < best_metric:  # Adjust based on your metric; here lower avg_giou indicates improvement
             best_metric = avg_giou
             epochs_since_improvement = 0
-            save_path = f'best_model_epoch_{epoch+1}.pth'
+            save_path = f'output_1/best_model_epoch_{epoch+1}.pth'
             torch.save(model.state_dict(), save_path)
             print(f"Saved Improved Model at {save_path}")
         else:

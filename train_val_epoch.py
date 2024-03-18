@@ -7,13 +7,14 @@ from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_token
 import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
-from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou,giou_loss
+from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou, giou_loss_with_scores, calculate_batch_max_iou_torchvision
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
-CFG.bos_idx = tokenizer.BOS_code
+CFG.bos_idx = tokenizer.BOS_code  
 CFG.pad_idx = tokenizer.PAD_code
+
 
 
 def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=None, iou_loss_weight=0.7):
@@ -73,33 +74,55 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         bleu_score = sentence_bleu(caption_grnd_truth_list, captions_preds_list, 
                            smoothing_function=chencherry.method1)
 
-        print("BLEU Score:", bleu_score)
+        if logger is not None:
+            logger.log({"BLEU Score trainng is": bleu_score})
 
         #IoU loss calculations
         predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox) 
+        #print("---------#################################---------------------")
         ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)
 
         #print("The predicted_bboxes is", predicted_bboxes)
-        # print("the shape of predicted_bboxes is", predicted_bboxes.shape)
-        # #print("The ground_truth_bboxes is", ground_truth_bboxes)          
-        # print("the shape of ground_truth_bboxes is", ground_truth_bboxes.shape)
+        #print("the shape of predicted_bboxes is", predicted_bboxes.shape)
+        #print("The ground_truth_bboxes is", ground_truth_bboxes)          
+        #print("the shape of ground_truth_bboxes is", ground_truth_bboxes.shape)
 
         iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
 
         #print("The iou_score is", iou_score)
 
-        max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
+        #max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
+        max_ious = calculate_batch_max_iou_torchvision(predicted_bboxes, ground_truth_bboxes)
+        #print("Max IOUs:", max_ious)
+
         # Ensure there's at least one IoU score to avoid division by zero
+        # if len(max_ious) > 0:
+        #     average_iou_score = sum(max_ious) / len(max_ious)
+        #     print("Average IoU score:", average_iou_score)
+        # else:
+        #     print("No IoU scores available to calculate average.")
+
         if len(max_ious) > 0:
             average_iou_score = sum(max_ious) / len(max_ious)
-            print("Average IoU score:", average_iou_score)
+            #print("Average IoU score:", average_iou_score)
         else:
-            print("No IoU scores available to calculate average.")
+            average_iou_score = float('nan')
+
+        if logger is not None:
+            logger.log({"Training Average IoU score": average_iou_score})
 
 
 
-        giou_bbox_loss = giou_loss(predicted_bboxes, ground_truth_bboxes)
-        print("THe giou_bbox_loss is", giou_bbox_loss)
+
+        giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
+        # print("THe giou_bbox_loss is", giou_bbox_loss)
+        # print("THe giou_bbox_score is", giou_bbox_score)
+        if logger is not None:
+            logger.log({
+                "Trainig GIoU BBox Loss": giou_bbox_loss,
+                "Trainig GIoU BBox Score Batch": giou_bbox_score_batch,
+                "Trainig Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+                })
 
 
 
@@ -200,38 +223,73 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 #     "weight_decay": CFG.weight_decay
 # })
 
-def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_individual, CFG, iou_loss_weight=0.5):
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+
+def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.5, logger=None):
     model.eval()
     loss_meter = AvgMeter()
-    iou_loss_meter = AvgMeter()
-    total_loss_meter = AvgMeter()
+    giou_loss_meter = AvgMeter()  # For tracking IoU loss separately
+    total_loss_meter = AvgMeter()  # For tracking the combined total loss
     tqdm_object = tqdm(valid_loader, total=len(valid_loader))
-
+    
     with torch.no_grad():
-        for i, (x, y) in enumerate(tqdm_object):  # Use enumerate to get an index
+        for x, y in tqdm_object:
             x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)
             y_input = y[:, :-1]
-
-            preds = model(x, y_input)
-            preds_adjusted = preds[:, :-1, :]  # Adjust based on your model's behavior
-
+            y_expected = y[:, 1:]
             y_expected_adjusted = y[:, 1:].reshape(-1)
 
-            ce_loss = criterion(preds_adjusted.reshape(-1, preds_adjusted.shape[-1]), y_expected_adjusted)
+            preds = model(x, y_input)
+            preds = preds[:, :-1]
+            predicted_classes = torch.argmax(preds, dim=-1)
 
-            # IOU loss calculation (omitted for brevity)
+            # BLEU score calculations for captions
+            tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+            caption_grnd_truth = tokenizer.decode_captions(y_expected)
 
-            total_loss = ce_loss  # Include other losses if necessary
+            captions_preds = tokenizer.decode_captions(tokens_caps_bbox)
+            captions_preds_list = captions_preds.cpu().tolist()
+            caption_grnd_truth_list = [caption_grnd_truth.cpu().tolist()]
 
+            chencherry = SmoothingFunction()
+            bleu_score = sentence_bleu(caption_grnd_truth_list, captions_preds_list, smoothing_function=chencherry.method1)
+
+            # Log BLEU score
+            if logger is not None:
+                logger.log({"Validation BLEU Score": bleu_score})
+
+            # IoU and GIoU loss calculations
+            predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)
+            ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)
+
+            iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
+            max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
+            
+            if len(max_ious) > 0:
+                average_iou_score = sum(max_ious) / len(max_ious)
+                # Log average IoU score
+                if logger is not None:
+                    logger.log({"Validation Average IoU score": average_iou_score})
+
+            giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
+            # Log GIoU bbox loss and score batch
+            if logger is not None:
+                logger.log({
+                    "Validation GIoU BBox Loss": giou_bbox_loss,
+                    "Validation GIoU BBox Score Batch": giou_bbox_score_batch,
+                    "Validation Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+                })
+
+            ce_loss = criterion(preds.reshape(-1, preds.shape[-1]), y_expected_adjusted)
+            # Note: L1 regularization is not applied during validation
+
+            total_loss = ce_loss + iou_loss_weight * giou_bbox_loss  # Combine losses
+
+            # Update loss meters
             loss_meter.update(ce_loss.item(), x.size(0))
-            # Update other meters similarly
+            giou_loss_meter.update(giou_bbox_loss.item(), x.size(0))
+            total_loss_meter.update(total_loss.item(), x.size(0))
 
-            # Print statements every 10 or 15 iterations
-            # if i % 10000 == 0:  # Change 10 or 15 according to your preference
-            #     print(f"Iteration {i}:")
-            #     print("The predictions in the valid loop are", preds)
-            #     print("The y_expected_adjusted in the valid loop is", y_expected_adjusted)
+            tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, giou_loss=giou_loss_meter.avg)
 
-            tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, iou_loss=iou_loss_meter.avg)
-
-    return loss_meter.avg, iou_loss_meter.avg, total_loss_meter.avg
+    return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg

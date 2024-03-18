@@ -447,7 +447,6 @@ class Tokenizer:
 
 
         for seq in pred_seq:
-            print(seq.shape)
             decoded_bboxes = []
             # Find the end of the caption
             eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]

@@ -130,13 +130,11 @@ from allied_files import CFG
 device = CFG.device 
 
 
-def giou_loss(pred_boxes, gt_boxes, no_detection_penalty=1.0):
-        # Ensure both tensors are on the same device
-    if pred_boxes.device != gt_boxes.device:
-        gt_boxes = gt_boxes.to(pred_boxes.device)
+def giou_loss_with_scores(pred_boxes, gt_boxes, no_detection_penalty=1.0):
     """
-    Adjusted GIoU loss calculation to handle variable-length bounding boxes, padding, and penalize no detections.
-    
+    Adjusted GIoU loss calculation to handle variable-length bounding boxes, padding, penalize no detections,
+    and also return GIoU scores.
+
     Parameters:
     - pred_boxes: Predicted bounding boxes tensor.
     - gt_boxes: Ground truth bounding boxes tensor.
@@ -144,42 +142,115 @@ def giou_loss(pred_boxes, gt_boxes, no_detection_penalty=1.0):
     
     Returns:
     - Total GIoU loss with penalties for no detections.
+    - A list of GIoU scores for each batch item.
     """
+    if pred_boxes.device != gt_boxes.device:
+        gt_boxes = gt_boxes.to(pred_boxes.device)
+
     batch_size = pred_boxes.size(0)
     giou_losses = []
-    
+    giou_scores_batch = []
+
     for i in range(batch_size):
         pred_bboxes = pred_boxes[i]
         gt_bboxes = gt_boxes[i]
-        
-        # Filter out zero-filled (padding) bounding boxes
+
         non_zero_pred = pred_bboxes.sum(dim=1) != 0
         non_zero_gt = gt_bboxes.sum(dim=1) != 0
         pred_bboxes = pred_bboxes[non_zero_pred]
         gt_bboxes = gt_bboxes[non_zero_gt]
-        
+
         if len(pred_bboxes) == 0 and len(gt_bboxes) > 0:
-            # No detections but there are ground truths; apply penalty based on the number of ground truth boxes
             giou_losses.append(torch.tensor(no_detection_penalty * len(gt_bboxes)).to(pred_boxes.device))
+            giou_scores_batch.append(torch.tensor([]).to(pred_boxes.device))
         elif len(pred_bboxes) == 0 or len(gt_bboxes) == 0:
-            # No valid bboxes in either predictions or ground truths, no contribution to the loss
             giou_losses.append(torch.tensor(0.0).to(pred_boxes.device))
+            giou_scores_batch.append(torch.tensor([]).to(pred_boxes.device))
         else:
-            # Calculate GIoU for valid bounding boxes
-            giou = giou_pairwise(pred_bboxes, gt_bboxes)  # Placeholder for pairwise GIoU calculation
+            giou = giou_pairwise(pred_bboxes, gt_bboxes)
             giou_loss = 1 - giou.mean()
             giou_losses.append(giou_loss)
-    
-    # Average GIoU loss across the batch
-    total_giou_loss = torch.stack(giou_losses).mean()
-    return total_giou_loss
+            giou_scores_batch.append(giou)
 
+    total_giou_loss = torch.stack(giou_losses).mean()
+    return total_giou_loss, giou_scores_batch
+
+
+
+# def giou_pairwise(pred_boxes, gt_boxes):
+#     # Implement GIoU calculation here
+#     # This is a simplified example; replace it with your actual GIoU calculation logic
+#     # Ensure all tensors created or manipulated are on the correct device
+#     # Example: calculate a dummy GIoU tensor that respects device placement
+#     giou_scores = torch.rand(len(pred_boxes), len(gt_boxes), device=pred_boxes.device)
+#     return giou_scores
 
 def giou_pairwise(pred_boxes, gt_boxes):
-    # Implement GIoU calculation here
-    # This is a simplified example; replace it with your actual GIoU calculation logic
-    # Ensure all tensors created or manipulated are on the correct device
-    # Example: calculate a dummy GIoU tensor that respects device placement
-    giou_scores = torch.rand(len(pred_boxes), len(gt_boxes), device=pred_boxes.device)
-    return giou_scores
+    """
+    Calculate the Generalized Intersection over Union (GIoU) between two sets of boxes.
+    
+    Args:
+    - pred_boxes (Tensor): Predicted bounding boxes, shape (N, 4).
+    - gt_boxes (Tensor): Ground truth bounding boxes, shape (M, 4).
+    
+    Returns:
+    - Tensor: GIoU scores, shape (N, M).
+    """
+    # Intersection
+    max_xy = torch.min(pred_boxes[:, None, 2:], gt_boxes[:, 2:])
+    min_xy = torch.max(pred_boxes[:, None, :2], gt_boxes[:, :2])
+    inter = torch.clamp((max_xy - min_xy), min=0)
+    intersection = inter[:, :, 0] * inter[:, :, 1]
+    
+    # Areas
+    pred_boxes_area = ((pred_boxes[:, 2] - pred_boxes[:, 0]) * 
+                       (pred_boxes[:, 3] - pred_boxes[:, 1]))
+    gt_boxes_area = ((gt_boxes[:, 2] - gt_boxes[:, 0]) * 
+                     (gt_boxes[:, 3] - gt_boxes[:, 1]))
+    
+    # Union
+    union = pred_boxes_area[:, None] + gt_boxes_area[None, :] - intersection
+    
+    # Enclosing box
+    enc_max_xy = torch.max(pred_boxes[:, None, 2:], gt_boxes[:, 2:])
+    enc_min_xy = torch.min(pred_boxes[:, None, :2], gt_boxes[:, :2])
+    enc = enc_max_xy - enc_min_xy
+    enclosing_area = enc[:, :, 0] * enc[:, :, 1]
+    
+    # GIoU
+    iou = intersection / union
+    giou = iou - (enclosing_area - union) / enclosing_area
+    return giou
 
+
+
+def iou_loss_individual(pred_boxes, gt_boxes, min_penalty=0.1, no_box_penalty=1.0):
+    """
+    Calculate IoU loss for individual pairs of predicted and ground truth boxes, applying a minimum penalty.
+    
+    Args:
+        pred_boxes (Tensor): Predicted bounding boxes, shape [N, 4].
+        gt_boxes (Tensor): Ground truth bounding boxes, shape [N, 4].
+        min_penalty (float): Minimum penalty to apply when IoU is zero.
+        no_box_penalty (float): Penalty to apply when no boxes are predicted.
+        
+    Returns:
+        Tensor: IoU loss for each predicted box, with minimum penalty applied, shape [N].
+    """
+    if pred_boxes.nelement() == 0:
+        # Return the no_box_penalty as the loss if no predicted boxes
+        return torch.full((gt_boxes.size(0),), no_box_penalty, device=gt_boxes.device)
+
+    iou_losses = []
+    for pred_box in pred_boxes:
+        ious = calculate_iou_individual(pred_box.unsqueeze(0), gt_boxes)
+        print(f"IoUs: {ious}")
+        # Apply minimum penalty for zero IoU values
+        ious = torch.where(ious > 0, ious, torch.full_like(ious, min_penalty))
+        # Calculate loss as 1 - IoU for each pair, applying minimum penalty
+        loss = 1 - ious
+        iou_losses.append(loss)
+
+    # Stack to create a tensor of individual losses and calculate mean loss per predicted box
+    iou_losses = torch.stack(iou_losses).mean(dim=1)
+    return iou_losses.mean()

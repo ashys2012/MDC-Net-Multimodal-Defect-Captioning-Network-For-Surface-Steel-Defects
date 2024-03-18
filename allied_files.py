@@ -21,17 +21,19 @@ class CFG:
 
     debug = False
     
-    batch_size = 64
-    epochs = 65
+    batch_size = 32
+    epochs = 200
     
     model_name = 'deit3_medium_patch16_224.fb_in22k_ft_in1k'
     num_patches = 196
-    lr = 1e-4     # reduced to 5 from 4
-    weight_decay = 1e-5       # changed (reduced)frfom 1e-5 to counter overfitting
+    lr = 1e-5     # reduced to 5 from 4
+    weight_decay = 1e-4       # changed (reduced)frfom 1e-5 to counter overfitting
 
     generation_steps = 101
-    l1_lambda = 1e-7             #kept high as the model is complex
-    patience = 60
+    l1_lambda = 1e-8             #kept high as the model is complex
+    patience = 190
+    iou_loss_weight = 0.8
+    model_save_path = "/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/"
 
 
 #below is from the original

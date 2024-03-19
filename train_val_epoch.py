@@ -185,7 +185,7 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         l1_norm = sum(p.abs().sum() for p in model.parameters())
         
         # Combine losses
-        ce_loss_weight = 0.1
+        ce_loss_weight = 0.05
         total_loss = ce_loss_weight * ce_loss + l1_lambda * l1_norm + iou_loss_weight * giou_bbox_loss
 
 

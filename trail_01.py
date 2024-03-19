@@ -134,9 +134,9 @@ wandb.init(project="pix_2_seq_march_224", entity="ashys2012", config={
 
 logger = wandb
 
-encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=512)
+encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=64)
 decoder = Decoder(vocab_size=305, #complete_vocab_size, #tokenizer.vocab_size,
-                  encoder_length=CFG.num_patches, dim=512, num_heads=32, num_layers=24)
+                  encoder_length=CFG.num_patches, dim=64, num_heads=2, num_layers=2)
 model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
@@ -144,6 +144,7 @@ model.to(CFG.device)
 from transformers import get_linear_schedule_with_warmup
 import torch.nn as nn
 import torch
+from torch.optim.lr_scheduler import CyclicLR
 
 
 
@@ -163,11 +164,11 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
 
         # Training phase
         model.train()
-        train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger = logger, iou_loss_weight=0.8)
+        train_loss = train_epoch(model, train_loader, optimizer, lr_scheduler if step == 'batch' else None, criterion, logger = logger, iou_loss_weight=0.95)
 
         # Validation phase
         model.eval()
-        valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.8, logger=logger)
+        valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.95, logger=logger)
         
         # Update the learning rate based on warmup scheduler if step is 'epoch'
         if lr_scheduler is not None and step == 'epoch':
@@ -197,11 +198,19 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=CFG.lr, weight_decay=CFG.we
 
 num_training_steps = CFG.epochs * (len(train_loader.dataset) // CFG.batch_size)
 print("num_training_steps is:", num_training_steps)
-num_warmup_steps = int(0.1 * num_training_steps)
+num_warmup_steps = int(0.075 * num_training_steps)
 print("num_warmup_steps is:", num_warmup_steps)
-lr_scheduler = get_linear_schedule_with_warmup(optimizer,
-                                               num_training_steps=num_training_steps,
-                                               num_warmup_steps=num_warmup_steps)
+# lr_scheduler = get_linear_schedule_with_warmup(optimizer,
+#                                                num_training_steps=num_training_steps,
+#                                                num_warmup_steps=num_warmup_steps)
+
+# Example parameters - adjust based on your dataset and model complexity
+base_lr = 1e-7  # Minimum learning rate
+max_lr = 1e-3   # Maximum learning rate
+step_size_up = len(train_loader) // 2  # Half an epoch to ramp up
+
+lr_scheduler = CyclicLR(optimizer, base_lr=base_lr, max_lr=max_lr, step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
+
 
 criterion = nn.CrossEntropyLoss(ignore_index=CFG.pad_idx) #alpha=1, gamma=2, 
 

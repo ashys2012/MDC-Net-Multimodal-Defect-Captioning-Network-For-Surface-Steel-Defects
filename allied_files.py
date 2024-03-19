@@ -30,9 +30,9 @@ class CFG:
     weight_decay = 1e-4       # changed (reduced)frfom 1e-5 to counter overfitting
 
     generation_steps = 101
-    l1_lambda = 1e-8             #kept high as the model is complex
+    l1_lambda = 1e-7             #kept high as the model is complex
     patience = 190
-    iou_loss_weight = 0.8
+    iou_loss_weight = 0.95
     model_save_path = "/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/"
 
 

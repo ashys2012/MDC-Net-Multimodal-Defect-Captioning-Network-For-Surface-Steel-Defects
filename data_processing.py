@@ -137,7 +137,7 @@ class VOCDataset(torch.utils.data.Dataset):
         return len(self.ids)
 
 
-def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.2):
+def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.1):
     
     # Split the original data into train and validation dataframes
     train_df, valid_df = train_test_split(df, test_size=valid_size, random_state=42)

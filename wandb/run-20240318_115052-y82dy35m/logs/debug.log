@@ -24,3 +24,4 @@ config: {'device': 'cuda', 'max_len': 100, 'img_size': 224, 'num_bins': 224, 'ba
 2024-03-18 11:50:57,447 INFO    MainThread:218873 [wandb_run.py:_redirect():2034] Wrapping output streams.
 2024-03-18 11:50:57,447 INFO    MainThread:218873 [wandb_run.py:_redirect():2059] Redirects installed.
 2024-03-18 11:50:57,448 INFO    MainThread:218873 [wandb_init.py:init():831] run started, returning control to user process
+2024-03-18 14:07:47,376 WARNING MsgRouterThr:218873 [router.py:message_loop():77] message_loop has been closed

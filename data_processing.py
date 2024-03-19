@@ -583,8 +583,122 @@ class Tokenizer:
         return padded_bboxes
 
 
+    def decode_bboxes_and_labels_with_scores(self, pred_seq, pred_scores, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+        # Ensure pred_seq is a tensor
+        if isinstance(pred_seq, list):
+            pred_seq = torch.tensor(pred_seq, device=CFG.device)
+        
+        # Same for pred_scores
+        if isinstance(pred_scores, list):
+            pred_scores = torch.tensor(pred_scores, device=CFG.device)
+        
+        pred_seq = pred_seq.clone().detach()
+        pred_scores = pred_scores.clone().detach()
+
+        if pred_seq.numel() == 0:
+            return [], [], [], ""
+
+        if pred_seq.dim() == 0:
+            pred_seq = pred_seq.unsqueeze(0)
+            pred_scores = pred_scores.unsqueeze(0)
+
+        all_decoded_bboxes = []
+        all_labels = []
+        all_scores = []
+
+        for seq, scores in zip(pred_seq, pred_scores):
+            decoded_bboxes = []
+            labels = []
+            bbox_scores = []
+            
+            eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
+            start_idx = eoc_idx[0].item() + 1 if len(eoc_idx) > 0 else 0
+
+            i = start_idx
+            while i < len(seq) - 4:
+                token = seq[i].item()
+                if label_start <= token <= label_end:
+                    bbox = seq[i + 1:i + 5]
+                    if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                        decoded_bboxes.append(bbox)
+                        labels.append(token)  # Capture the label
+                        
+                        # Average the scores for the bbox coordinates
+                        bbox_score = scores[i + 1:i + 5].mean().item()
+                        bbox_scores.append(bbox_score)
+                        
+                    i += 5
+                elif token == eos_token:
+                    break
+                else:
+                    i += 1
+
+            if decoded_bboxes:
+                decoded_bboxes = torch.stack(decoded_bboxes)
+                labels = torch.tensor(labels, device=CFG.device)
+                all_decoded_bboxes.append(decoded_bboxes)
+                all_labels.append(labels)
+                all_scores.append(torch.tensor(bbox_scores, device=CFG.device))
+            else:
+                all_decoded_bboxes.append(torch.zeros(1, 4, device=CFG.device))
+                all_labels.append(torch.tensor([], device=CFG.device, dtype=torch.int64))
+                all_scores.append(torch.tensor([], device=CFG.device))
+
+        padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
+        padded_labels = pad_sequence(all_labels, batch_first=True, padding_value=-1)
+        padded_scores = pad_sequence(all_scores, batch_first=True, padding_value=-1)
+
+        return padded_bboxes, padded_labels, padded_scores
 
 
+    def decode_bboxes_and_labels(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+        if isinstance(pred_seq, list):
+            pred_seq = torch.tensor(pred_seq, device=CFG.device)
+
+        pred_seq = pred_seq.clone().detach()
+
+        if pred_seq.numel() == 0:
+            return [], [], ""
+
+        if pred_seq.dim() == 0:
+            pred_seq = pred_seq.unsqueeze(0)
+
+        all_decoded_bboxes = []
+        all_labels = []
+
+        for seq in pred_seq:
+            decoded_bboxes = []
+            labels = []
+            eoc_idx = (seq == caption_end_token).nonzero(as_tuple=True)[0]
+            start_idx = eoc_idx[0].item() + 1 if len(eoc_idx) > 0 else 0
+
+            i = start_idx
+            while i < len(seq) - 4:
+                token = seq[i].item()
+                if label_start <= token <= label_end:
+                    bbox = seq[i + 1:i + 5]
+                    if torch.all(bbox >= 0) and torch.all(bbox <= 224) and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                        decoded_bboxes.append(bbox)
+                        labels.append(token)  # Capture the label
+                    i += 5
+                elif token == eos_token:
+                    break
+                else:
+                    i += 1
+
+            if decoded_bboxes:
+                decoded_bboxes = torch.stack(decoded_bboxes)
+                labels = torch.tensor(labels, device=CFG.device)
+                all_decoded_bboxes.append(decoded_bboxes)
+                all_labels.append(labels)
+            else:
+                all_decoded_bboxes.append(torch.zeros(1, 4, device=CFG.device))
+                all_labels.append(torch.tensor([], device=CFG.device, dtype=torch.int64))
+
+        padded_bboxes = pad_sequence(all_decoded_bboxes, batch_first=True, padding_value=0)
+        padded_labels = pad_sequence(all_labels, batch_first=True, padding_value=-1)  # Use -1 or any appropriate value for padding
+
+        return padded_bboxes, padded_labels
 
 
 
@@ -674,3 +788,34 @@ def extract_tokens(pred_probs):
     :return: Tensor of selected token indices (batch_size, sequence_length).
     """
     return torch.argmax(pred_probs, dim=-1)
+
+
+
+def top_k_sampling_with_scores_2d(logits, k):
+    """
+    Performs top-k sampling from logits, returning both sampled indices and their scores.
+    Adapted for 2-dimensional logits tensor (batch_size, num_classes).
+
+    Args:
+        logits (torch.Tensor): The logits from the model (batch_size, num_classes).
+        k (int): The number of top logits to consider for sampling.
+
+    Returns:
+        sampled_indices (torch.Tensor): The sampled indices (batch_size, 1).
+        sampled_scores (torch.Tensor): The scores associated with the sampled indices (batch_size, 1).
+    """
+    # Zero out logits not in the top-k, then compute probabilities
+    topk_vals, _ = torch.topk(logits, k, dim=1)
+    min_vals = topk_vals[:, -1].unsqueeze(1)
+    logits[logits < min_vals] = -float('Inf')
+    probs = torch.softmax(logits, dim=-1)
+
+    # Sample indices based on the modified probabilities
+    sampled_indices = torch.multinomial(probs, 1)
+
+    # Gather the scores (probabilities) corresponding to the sampled indices
+    batch_indices = torch.arange(logits.size(0)).unsqueeze(1)
+    sampled_scores = probs.gather(1, sampled_indices)
+
+    return sampled_indices, sampled_scores
+

@@ -2,12 +2,17 @@ import torch
 from tqdm import tqdm
 from allied_files import CFG, AvgMeter, get_lr
 from iou_bbox import decode_bbox_from_pred, decode_predictions,decode_single_prediction,extract_ground_truth,iou_loss, extract_predictions,  calculate_iou, iou_loss_individual
-from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_tokens
+from data_processing import Tokenizer, Vocabulary, top_k_sampling, extract_tokens, top_k_sampling_with_scores_2d
 #torch.set_printoptions(profile="full")
 import torch.nn.functional as F
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou, giou_loss_with_scores, calculate_batch_max_iou_torchvision
+import torchmetrics
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
+
+
+
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
@@ -80,7 +85,96 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         #IoU loss calculations
         predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox) 
         #print("---------#################################---------------------")
-        ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)
+        ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)     #The shape of ground_truth_bboxes is torch.Size([32, 5, 4]) the center value is variable as it is the num_bboxes
+    
+
+
+
+        #Mean Average Precision calculations
+
+
+        # Reshape logits for sampling if necessary
+        reshaped_logits = preds.reshape(-1, preds.size(-1))    #The shape of reshaped_logits is torch.Size([3168, 305])
+
+        # Perform top-k sampling to get indices and scores
+        sampled_indices, sampled_scores = top_k_sampling_with_scores_2d(reshaped_logits, k=10)
+
+        # If needed, reshape back to original dimensions
+        # Be mindful of how you reshape indices and scores to align with your downstream processing
+        sampled_indices = sampled_indices.reshape(preds.size(0), -1)            #The shape of sampled_indices is torch.Size([32, 99]) =3168
+        sampled_scores = sampled_scores.reshape(preds.size(0), -1)              #The shape of sampled_scores is torch.Size([3168, 1])
+
+        bbox_w_score, label_w_score, score_ = tokenizer.decode_bboxes_and_labels_with_scores(sampled_indices, sampled_scores)
+        #The shape of bbox_w_score is torch.Size([32, 1, 4]) and the shape of label_w_score is torch.Size([32, 1])
+        ground_truth_bboxes, ground_truth_labels = tokenizer.decode_bboxes_and_labels(y_expected)
+
+        preds_formatted = []
+        targets_formatted = []
+        actual_batch_size = bbox_w_score.shape[0]
+
+        for i in range(actual_batch_size):  # Assuming 32 is your batch size
+            # Formatting preds
+            pred_dict = {
+                "boxes": bbox_w_score[i],  # Assuming shape [1, 4]
+                "scores": score_[i],       # Assuming shape [1]
+                "labels": label_w_score[i] # Assuming shape [1]
+            }
+            preds_formatted.append(pred_dict)
+            
+            # Formatting target
+            # This part depends on how you have your ground truth labels organized
+            # Let's assume you have a similar tensor for labels: ground_truth_labels with shape [32, 5]
+            target_dict = {
+                "boxes": ground_truth_bboxes[i],  # Assuming shape [5, 4]
+                "labels": ground_truth_labels[i]  # Assuming shape [5]
+            }
+            targets_formatted.append(target_dict)
+
+        # Step 2: Initialize the mAP metric
+        # Adjust parameters according to your specific needs, for example, setting different IoU thresholds
+        # Example of specifying IoU thresholds as a list
+        iou_thresholds = [0.5]  # This can be a list of thresholds if needed
+
+        map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
+
+        # Step 3: Update the metric with your predictions and targets
+        # Assuming preds and targets_formatted are your prediction and ground truth data
+        # Since your data is already on CUDA, ensure torchmetrics is also using the same device
+        map_metric = map_metric.to('cuda:0')
+
+
+
+        for pred, target in zip(preds_formatted, targets_formatted):
+            if pred['scores'].nelement() == 0:  # Checks if there are no scores
+                pred = {
+                    "boxes": torch.empty((0, 4), device='cuda:0'),
+                    "scores": torch.empty((0,), device='cuda:0'),
+                    "labels": torch.empty((0,), dtype=torch.int64, device='cuda:0')
+                }
+            map_metric.update([pred], [target])
+
+
+
+        # Step 4: Compute the mAP
+        map_scores = map_metric.compute()
+        #map_scores_scalar = {k: v.item() if hasattr(v, "item") else v for k, v in map_scores.items()}
+
+        # Extract class-wise mAP scores, assuming they're stored under "map_per_class"
+        # if "map_per_class" in map_scores:
+        #     class_maps = map_scores["map_per_class"].cpu().numpy()  # Ensure it's on CPU and convert to numpy for easy handling
+
+        #     # Prepare class-wise mAP scores for logging
+        #     class_maps_dict = {f"Class_{i}_mAP": mAP for i, mAP in enumerate(class_maps)}
+            
+        #     # Log class-wise mAP scores
+        #     if logger is not None:
+        #         logger.log(class_maps_dict)
+
+        # Log overall mAP scores
+        if logger is not None:
+            logger.log({"Training mAP scores": map_scores})
+        
+
 
         #print("The predicted_bboxes is", predicted_bboxes)
         #print("the shape of predicted_bboxes is", predicted_bboxes.shape)
@@ -279,6 +373,96 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
                     "Validation GIoU BBox Score Batch": giou_bbox_score_batch,
                     "Validation Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
                 })
+
+
+
+
+
+            #Mean Average Precision calculations
+
+
+            # Reshape logits for sampling if necessary
+            reshaped_logits = preds.reshape(-1, preds.size(-1))    #The shape of reshaped_logits is torch.Size([3168, 305])
+
+            # Perform top-k sampling to get indices and scores
+            sampled_indices, sampled_scores = top_k_sampling_with_scores_2d(reshaped_logits, k=10)
+
+            # If needed, reshape back to original dimensions
+            # Be mindful of how you reshape indices and scores to align with your downstream processing
+            sampled_indices = sampled_indices.reshape(preds.size(0), -1)            #The shape of sampled_indices is torch.Size([32, 99]) =3168
+            sampled_scores = sampled_scores.reshape(preds.size(0), -1)              #The shape of sampled_scores is torch.Size([3168, 1])
+
+            bbox_w_score, label_w_score, score_ = tokenizer.decode_bboxes_and_labels_with_scores(sampled_indices, sampled_scores)
+            #The shape of bbox_w_score is torch.Size([32, 1, 4]) and the shape of label_w_score is torch.Size([32, 1])
+            ground_truth_bboxes, ground_truth_labels = tokenizer.decode_bboxes_and_labels(y_expected)
+
+            preds_formatted = []
+            targets_formatted = []
+            actual_batch_size = bbox_w_score.shape[0]
+
+            for i in range(actual_batch_size):  # Assuming 32 is your batch size
+                # Formatting preds
+                pred_dict = {
+                    "boxes": bbox_w_score[i],  # Assuming shape [1, 4]
+                    "scores": score_[i],       # Assuming shape [1]
+                    "labels": label_w_score[i] # Assuming shape [1]
+                }
+                preds_formatted.append(pred_dict)
+                
+                # Formatting target
+                # This part depends on how you have your ground truth labels organized
+                # Let's assume you have a similar tensor for labels: ground_truth_labels with shape [32, 5]
+                target_dict = {
+                    "boxes": ground_truth_bboxes[i],  # Assuming shape [5, 4]
+                    "labels": ground_truth_labels[i]  # Assuming shape [5]
+                }
+                targets_formatted.append(target_dict)
+
+            # Step 2: Initialize the mAP metric
+            # Adjust parameters according to your specific needs, for example, setting different IoU thresholds
+            # Example of specifying IoU thresholds as a list
+            iou_thresholds = [0.5]  # This can be a list of thresholds if needed
+
+            map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
+
+            # Step 3: Update the metric with your predictions and targets
+            # Assuming preds and targets_formatted are your prediction and ground truth data
+            # Since your data is already on CUDA, ensure torchmetrics is also using the same device
+            map_metric = map_metric.to('cuda:0')
+
+
+
+            for pred, target in zip(preds_formatted, targets_formatted):
+                if pred['scores'].nelement() == 0:  # Checks if there are no scores
+                    pred = {
+                        "boxes": torch.empty((0, 4), device='cuda:0'),
+                        "scores": torch.empty((0,), device='cuda:0'),
+                        "labels": torch.empty((0,), dtype=torch.int64, device='cuda:0')
+                    }
+                map_metric.update([pred], [target])
+
+
+
+            # Step 4: Compute the mAP
+            map_scores = map_metric.compute()
+            #map_scores_scalar = {k: v.item() if hasattr(v, "item") else v for k, v in map_scores.items()}
+
+            # Extract class-wise mAP scores, assuming they're stored under "map_per_class"
+            if "map_per_class" in map_scores:
+                class_maps = map_scores["map_per_class"].cpu().numpy()  # Ensure it's on CPU and convert to numpy for easy handling
+
+                # Prepare class-wise mAP scores for logging
+                class_maps_dict = {f"Class_{i}_mAP": mAP for i, mAP in enumerate(class_maps)}
+                
+                # Log class-wise mAP scores
+                if logger is not None:
+                    logger.log(class_maps_dict)
+
+            # Log overall mAP scores
+            if logger is not None:
+                logger.log({"Validation mAP scores": map_scores})
+
+
 
             ce_loss = criterion(preds.reshape(-1, preds.shape[-1]), y_expected_adjusted)
             # Note: L1 regularization is not applied during validation

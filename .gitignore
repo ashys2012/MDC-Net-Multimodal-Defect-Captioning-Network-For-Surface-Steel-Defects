@@ -16,3 +16,9 @@ output_1
 wandb/
 wandb/*
 wandb
+/mnt/sdb/2024/pix_2_seq_with_captions_march/pix_2_seq_cap_bbox_backup
+/mnt/sdb/2024/pix_2_seq_with_captions_march/pix_2_seq_cap_bbox_backup/*
+/mnt/sdb/2024/pix_2_seq_with_captions_march/pix_2_seq_cap_bbox_backup/
+pix_2_seq_cap_bbox_backup/
+pix_2_seq_cap_bbox_backup/*
+pix_2_seq_cap_bbox_backup

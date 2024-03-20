@@ -168,7 +168,7 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
 
         # Validation phase
         model.eval()
-        valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.95, logger=logger)
+        valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.95, logger=logger, epoch_num=epoch)
         
         # Update the learning rate based on warmup scheduler if step is 'epoch'
         if lr_scheduler is not None and step == 'epoch':

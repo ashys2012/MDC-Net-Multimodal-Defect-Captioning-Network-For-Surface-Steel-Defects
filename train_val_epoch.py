@@ -10,7 +10,8 @@ from nltk.translate.bleu_score import SmoothingFunction
 from iou_calcualtions import bbox_iou, calculate_batch_iou, calculate_batch_max_iou, giou_loss_with_scores, calculate_batch_max_iou_torchvision
 import torchmetrics
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
-
+import pandas as pd
+from datetime import datetime
 
 
 
@@ -319,12 +320,15 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
-def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.5, logger=None):
+def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.5, logger=None, epoch_num=None):
     model.eval()
     loss_meter = AvgMeter()
     giou_loss_meter = AvgMeter()  # For tracking IoU loss separately
     total_loss_meter = AvgMeter()  # For tracking the combined total loss
     tqdm_object = tqdm(valid_loader, total=len(valid_loader))
+    log_df = pd.DataFrame()  # Initialize logging dataframe
+    batch_counter = 0  # Initialize batch counter
+    log_data = []
     
     with torch.no_grad():
         for x, y in tqdm_object:
@@ -476,4 +480,41 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
             tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, giou_loss=giou_loss_meter.avg)
 
+            batch_counter += 1
+
+            log_temp = {
+            'epoch_batch': f"Epoch_{epoch_num}_Batch_{batch_counter}",
+            'captions_preds_list': [captions_preds_list],
+            'caption_grnd_truth_list': [caption_grnd_truth_list],
+            'predicted_bboxes': [predicted_bboxes.tolist()],  # Assuming predicted_bboxes is a tensor
+            'ground_truth_bboxes': [ground_truth_bboxes.tolist()],  # Assuming ground_truth_bboxes is a tensor
+            'predicted_classes': [predicted_classes.tolist()],  # Assuming predicted_classes is a tensor
+            'y_expected': [y_expected.tolist()]  # Assuming y_expected is a tensor
+            }
+            log_data.append(log_temp)  # Append to log_data list
+
+        
+
+        # After completing the loop for all batches in an epoch
+        log_df = pd.DataFrame(log_data)  # Convert your accumulated log data into a DataFrame
+
+        # Append this epoch's log DataFrame to the Excel file
+        output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_march/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        append_df_to_csv(output_file_path, log_df)
+
+
+
     return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg
+
+
+import pandas as pd
+import os
+
+def append_df_to_csv(filename, df, **to_csv_kwargs):
+    # Check if file exists and if yes, determine if the header should be written
+    header = not os.path.exists(filename)
+    
+    # Append data to the CSV file
+    df.to_csv(filename, mode='a', header=header, **to_csv_kwargs)
+
+

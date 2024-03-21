@@ -38,7 +38,7 @@ def decode_sequence(sequence, tokenizer):
         # Convert each integer token to a tensor and specify the device
         token_tensor = torch.tensor([token], device=CFG.device)
         # Decode the tensor to get the corresponding string representation
-        decoded_token = tokenizer.decode(token_tensor)
+        decoded_token = tokenizer(token_tensor)
         decoded.append(decoded_token)
     return decoded
 
@@ -64,10 +64,60 @@ def inference_single_image(model, image_tensor, tokenizer, top_k=5):
     print("Raw tokens:", seq_generated)
     return seq_generated
 
+def inference_single_image_without_bos(model, image_tensor, tokenizer, top_k=5):
+    model.eval()
+    with torch.no_grad():
+        x = image_tensor.to(CFG.device)
+        # Start with an empty sequence. This assumes your model has some other mechanism to handle sequence start.
+        y_input = torch.empty((0,), dtype=torch.long, device=CFG.device).unsqueeze(0)  # Empty sequence
+        seq_generated = []
+
+        for _ in range(max_ln):  # max_ln is the maximum sequence length
+            preds = model(x, y_input)
+            logits = preds[:, -1, :]  # Get the logits for the last token position
+            next_token = top_k_sampling(logits, k=top_k)  # Use top-k sampling
+            seq_generated.append(next_token.item())
+            
+            if next_token.item() == tokenizer.EOS_code:
+                break
+            
+            # If y_input is empty, initialize it with next_token; otherwise, concatenate next_token
+            if y_input.nelement() == 0:
+                y_input = next_token.unsqueeze(0).unsqueeze(0)
+            else:
+                y_input = torch.cat([y_input, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+
+    print("Raw tokens:", seq_generated)
+    return seq_generated
+
+
+max_seq_length = 100
+
+def inference_epoch_bbox(model, data_loader, tokenizer, logger=None):
+    model.eval()
+    predictions = []  # To store model predictions
+    tqdm_object = tqdm(data_loader, total=len(data_loader))
+    log_data = []
+
+    with torch.no_grad():
+        for x in tqdm_object:
+            x = x.to(CFG.device, non_blocking=True)
+            # Here, instead of preparing y_input with a BOS token, directly use model prediction
+            preds = model(x)
+            # If your model outputs predictions in a batch x sequence x features format, adjust as needed
+            predicted_classes = torch.argmax(preds, dim=-1)
+            predictions.append(predicted_classes.cpu().numpy())
+            
+            # Optionally, process or log predictions here
+
+    # Optionally, convert predictions to actual tokens/strings and return
+    return predictions
 
 
 
-# Example usage:
+
+
+# # Example usage:
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
@@ -117,15 +167,19 @@ transform_pipeline = get_transform_inference(size)
 
 
 # Load the model and weights
-model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/best_model_epoch_54.pth'
+model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/best_model_epoch_189.pth'
 model.load_state_dict(torch.load(model_weights_path, map_location=CFG.device))
 
 # Process the image(s)
-image_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/images/inclusion_10.jpg'
+image_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/images/scratches_10.jpg'
 image_tensor = preprocess_image_for_inference(image_path, transform_pipeline)
 
 # Perform inference
 prediction = inference_single_image(model, image_tensor, tokenizer)
 print(prediction)
+
+
+# prediction = inference_single_image_without_bos(model, image_tensor, tokenizer)
+# print("pred without bos token in infrence code is",prediction)
 
 # If you have a second image, repeat the preprocessing and inference steps

@@ -16,3 +16,9 @@ output_1
 wandb/
 wandb/*
 wandb
+/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images
+/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images/*
+/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images/
+test_output_images/
+test_output_images/*
+test_output_images

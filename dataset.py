@@ -108,8 +108,8 @@ def get_transform_train(size):
 
 def get_transform_valid(size):
     return A.Compose([
-        A.Resize(size, size),
-        A.Normalize(),
+        A.Resize(size, size)
+        #A.Normalize(),
     ], bbox_params={'format': 'pascal_voc', 'label_fields': ['labels']})
 
 

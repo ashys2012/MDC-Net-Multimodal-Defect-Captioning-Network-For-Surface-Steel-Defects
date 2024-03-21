@@ -12,7 +12,10 @@ import torchmetrics
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 import pandas as pd
 from datetime import datetime
-
+from utilities import append_df_to_csv, draw_bbox_with_caption
+import os
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 
 
 vocab = Vocabulary(freq_threshold=5)
@@ -507,14 +510,58 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
     return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg
 
 
-import pandas as pd
-import os
 
-def append_df_to_csv(filename, df, **to_csv_kwargs):
-    # Check if file exists and if yes, determine if the header should be written
-    header = not os.path.exists(filename)
+def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images', epoch_num=None):
+    model.eval()
     
-    # Append data to the CSV file
-    df.to_csv(filename, mode='a', header=header, **to_csv_kwargs)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    with torch.no_grad():
+        for batch_idx, (x, y) in enumerate(test_loader):
+            x = x.to(CFG.device)
+            #print("The shape of x is", x.shape)
+            # Assuming y contains both the captions and bounding boxes information
+            y_input = y[:, :-1].to(CFG.device)
+
+            # Generate predictions
+            preds = model(x, y_input)[:, :-1]
+            
+            # Decode predictions to get captions and bounding boxes
+            predicted_captions = tokenizer.decode_captions(torch.argmax(preds, dim=-1))
 
 
+
+            tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+            predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)  # Ensure this function exists and works as expected
+
+            
+            
+            # Convert batch of tensors to numpy images and process each image
+            # Convert batch of tensors to numpy images and process each image
+            images_np = x.cpu().numpy()
+            num_items = min(x.size(0), predicted_captions.size(0))
+            for i in range(num_items):  # Iterate over the range of num_items instead
+                image_np = images_np[i]
+
+                # Ensure the image data is in the range [0, 255] if it was normalized
+                image_np = (image_np * 255).astype(np.uint8)
+
+                # Rearrange the array from (C, H, W) to (H, W, C) for PIL compatibility
+                image_np = np.transpose(image_np, (1, 2, 0))
+
+                # Now convert to a PIL Image
+                image_pil = Image.fromarray(image_np).convert('RGB')
+
+                # Example of adjusting the call for bboxes and captions
+                bboxes = [list(map(int, bbox)) for bbox in predicted_bboxes[i].tolist()] if predicted_bboxes[i].dim() > 0 else []
+                print("The bboxes is in the test epoch is", bboxes)
+                captions = predicted_captions[i].tolist() if predicted_captions[i].dim() > 0 else []
+                print("The captions is in the test epoch is", captions)
+
+                # Now, bboxes and captions are both lists, and we can safely attempt to draw them
+                draw_bbox_with_caption(image_pil, bboxes, captions)
+
+                # Save the image with unique naming including epoch number
+                filename = f'test_image_epoch{epoch_num}_batch{batch_idx}_img{i}.png'
+                image_pil.save(os.path.join(save_dir, filename))

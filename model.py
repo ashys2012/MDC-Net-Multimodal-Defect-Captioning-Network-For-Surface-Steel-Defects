@@ -57,8 +57,10 @@ class Decoder(nn.Module):
     
     def forward(self, encoder_out, tgt):
         BOS_tensor = torch.full((tgt.size(0), 1), CFG.bos_idx, dtype=tgt.dtype, device=tgt.device)
-        #print("THe bos tensor in the forward method is",BOS_tensor)
+        # THe bos tensor in the forward method is tensor([[300]], device='cuda:0')
+        # THe shape of the bos tensor in the forward method is torch.Size([1, 1])
         tgt_with_bos = torch.cat([BOS_tensor, tgt], dim=1)
+        #print("THe tgt_with_bos in the forward method is", tgt_with_bos)
 
         # Dynamically adjust decoder_pos_embed to match tgt_with_bos length
         sequence_length = tgt_with_bos.size(1)
@@ -72,9 +74,11 @@ class Decoder(nn.Module):
             new_decoder_pos_embed = self.decoder_pos_embed
 
         tgt_embedding = self.embedding(tgt_with_bos)
+        # THe shape of the tgt_embedding in the forward method is torch.Size([1, 100, 64]) which is batch_size, seq_ln and dim and the seq_ln keeps increasing
         tgt_embedding = self.decoder_pos_drop(tgt_embedding + new_decoder_pos_embed)
 
         encoder_out = self.encoder_pos_drop(encoder_out + self.encoder_pos_embed)
+        # THe shape of the encoder_out in the forward method is torch.Size([1, 196, 64]) which is batch_size, num_patches and dim
         encoder_out = encoder_out.transpose(0, 1)
         tgt_embedding = tgt_embedding.transpose(0, 1)
 
@@ -110,7 +114,7 @@ class Decoder(nn.Module):
         preds = preds.transpose(0, 1)
         output = self.output(preds)
         bos_tokens = torch.full((output.size(0), 1, output.size(2)), CFG.bos_idx, device=output.device, dtype=torch.long)
-        print("The BOS Token is --------------", bos_tokens)
+        #print("The BOS Token is --------------", bos_tokens)
     
         # Concatenate the BOS tokens to the beginning of the output
         # Since output is likely in logits or probabilities, you might directly work with indices for prepending

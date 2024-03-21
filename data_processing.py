@@ -137,32 +137,29 @@ class VOCDataset(torch.utils.data.Dataset):
         return len(self.ids)
 
 
-def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.1):
-    
-    # Split the original data into train and validation dataframes
-    train_df, valid_df = train_test_split(df, test_size=valid_size, random_state=42)
 
-    print("training dataset is ", len(train_df))
-    print("val dataset is ", len(valid_df))
+def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.15, test_size=0.05):
+    # Adjust valid_size to account for the size after removing the test set
+    # This calculation ensures that the validation set is 15% of the original dataset,
+    # and the test set is 5%, leaving the training set with 80%.
+    valid_size_adj = valid_size / (1 - test_size)
+
+    # First split: separate out the test dataset
+    train_valid_df, test_df = train_test_split(df, test_size=test_size, random_state=42)
+
+    # Second split: split the remaining data into train and validation datasets
+    train_df, valid_df = train_test_split(train_valid_df, test_size=valid_size_adj, random_state=42)
+
+    print("Training dataset size: ", len(train_df))
+    print("Validation dataset size: ", len(valid_df))
+    print("Test dataset size: ", len(test_df))
     
+    # Define datasets for each split
     train_ds = VOCDataset(train_df, transforms=get_transform_train(img_size), tokenizer=tokenizer)
     valid_ds = VOCDataset(valid_df, transforms=get_transform_valid(img_size), tokenizer=tokenizer)
-    
-    #THe below code is to check the dataset with its bbox
-    #
-    num_samples_to_print = 1
+    test_ds = VOCDataset(test_df, transforms=get_transform_valid(img_size), tokenizer=tokenizer)
 
-    for i in range(num_samples_to_print):
-        # Get the ith sample
-        img_tensors, bbox_label_seq = train_ds[i]  # Unpack the tuple here
-        
-        # Print the bounding boxes and labels
-        print(f"Sample {i}:")
-        print("Img_tensors:", img_tensors)
-        print("Seq:", bbox_label_seq)
-        print("\n")
-
-
+    # DataLoader for the training set
     train_loader = torch.utils.data.DataLoader(
         train_ds,
         batch_size=batch_size,
@@ -171,7 +168,8 @@ def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_worke
         num_workers=num_workers,
         pin_memory=True,
     )
-    
+
+    # DataLoader for the validation set
     valid_loader = torch.utils.data.DataLoader(
         valid_ds,
         batch_size=batch_size,
@@ -181,10 +179,18 @@ def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_worke
         pin_memory=True,
     )
 
-    # print("Train size: ", train_df['id'].nunique())
-    # print("Valid size: ", valid_df['id'].nunique())
-        
-    return train_loader, valid_loader  # Removed test_loader
+    # DataLoader for the test set
+    test_loader = torch.utils.data.DataLoader(
+        test_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=partial(collate_fn, max_len=max_len, pad_idx=pad_idx),
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+
+    return train_loader, valid_loader, test_loader
+
 
 
 

@@ -23,7 +23,18 @@ seed_everything(seed=42)
 from data_processing import Tokenizer, Vocabulary, get_loaders
 from allied_files import CFG, concat_gt
 from iou_bbox import iou_loss_individual
-from train_val_epoch import train_epoch,valid_epoch_bbox
+from train_val_epoch import train_epoch,valid_epoch_bbox, test_epoch
+from transformers import get_linear_schedule_with_warmup
+import torch.nn as nn
+import torch
+from torch.optim.lr_scheduler import CyclicLR
+
+
+
+from torch.optim.lr_scheduler import LambdaLR
+from transformers import get_linear_schedule_with_warmup
+import torch
+import torch.nn as nn
 
 
 txt_file_path = "/mnt/sdb/2024/pix_2_seq_with_captions_march/annotations_summary_fin.txt"
@@ -99,10 +110,11 @@ print("total_vocab_size is ", total_vocab_size)
 
 
 
+sampled_df = df.sample(frac=0.1, random_state=42)
 
 
 # Usage
-train_loader, valid_loader = get_loaders(
+train_loader, valid_loader, test_loader = get_loaders(
     df, tokenizer, CFG.img_size, CFG.batch_size, CFG.max_len, tokenizer.PAD_code
 )
 
@@ -112,7 +124,8 @@ Here starts WANDB implementation
 
 import wandb
 
-# Initialize wandb and pass configuration from CFG class
+#Initialize wandb and pass configuration from CFG class
+
 wandb.init(project="pix_2_seq_march_224", entity="ashys2012", config={
     "device": CFG.device.type,  # Logging the device type as a string
     "max_len": CFG.max_len,
@@ -141,17 +154,7 @@ model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
 
-from transformers import get_linear_schedule_with_warmup
-import torch.nn as nn
-import torch
-from torch.optim.lr_scheduler import CyclicLR
 
-
-
-from torch.optim.lr_scheduler import LambdaLR
-from transformers import get_linear_schedule_with_warmup
-import torch
-import torch.nn as nn
 # Assuming CFG and other necessary imports are already defined
 
 def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimizer, lr_scheduler, step, logger=None):
@@ -170,6 +173,7 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
         model.eval()
         valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=0.95, logger=logger, epoch_num=epoch)
         
+        test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images', epoch_num=epoch)
         # Update the learning rate based on warmup scheduler if step is 'epoch'
         if lr_scheduler is not None and step == 'epoch':
             lr_scheduler.step()

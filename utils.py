@@ -10,15 +10,21 @@ def generate_square_subsequent_mask(sz):
     return mask
 
 
+# def create_mask(tgt):
+#     """
+#     tgt: shape(N, L)
+#     """
+#     tgt_seq_len = tgt.shape[1]
+
+#     tgt_mask = generate_square_subsequent_mask(tgt_seq_len)
+#     tgt_padding_mask = (tgt == CFG.pad_idx).to(tgt_mask.dtype)  # Convert to same dtype if necessary
+
+#     return tgt_mask, tgt_padding_mask
+
 def create_mask(tgt):
-    """
-    tgt: shape(N, L)
-    """
-    tgt_seq_len = tgt.shape[1]
-
-    tgt_mask = generate_square_subsequent_mask(tgt_seq_len)
-    tgt_padding_mask = (tgt == CFG.pad_idx)
-
+    tgt_seq_len = tgt.shape[1]  # This should reflect the sequence length with BOS token
+    tgt_mask = generate_square_subsequent_mask(tgt_seq_len).to(tgt.device)
+    tgt_padding_mask = (tgt == CFG.pad_idx).to(tgt.device).float()  # Assuming pad_idx is defined in CFG
     return tgt_mask, tgt_padding_mask
 
 

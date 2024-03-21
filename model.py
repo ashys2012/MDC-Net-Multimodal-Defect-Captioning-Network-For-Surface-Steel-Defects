@@ -56,36 +56,37 @@ class Decoder(nn.Module):
         
     
     def forward(self, encoder_out, tgt):
-        BOS_tensor = torch.full((tgt.size(0), 1), CFG.bos_idx, dtype=tgt.dtype, device=tgt.device)
-        # THe bos tensor in the forward method is tensor([[300]], device='cuda:0')
-        # THe shape of the bos tensor in the forward method is torch.Size([1, 1])
-        tgt_with_bos = torch.cat([BOS_tensor, tgt], dim=1)
-        #print("THe tgt_with_bos in the forward method is", tgt_with_bos)
-
-        # Dynamically adjust decoder_pos_embed to match tgt_with_bos length
+        # Dynamically adjust decoder_pos_embed to match tgt length
+        BOS_tesnor = torch.full((tgt.size(0), 1), CFG.bos_idx, dtype=torch.long, device=tgt.device)
+        tgt_with_bos = torch.cat([BOS_tesnor, tgt], dim=1)
         sequence_length = tgt_with_bos.size(1)
+        #sequence_length = tgt.size(1)
         if sequence_length != self.decoder_pos_embed.size(1):
-            # Resize positional embedding to match current sequence length
             new_decoder_pos_embed = nn.functional.interpolate(self.decoder_pos_embed.permute(0, 2, 1), 
-                                                              size=sequence_length, 
-                                                              mode='linear', 
-                                                              align_corners=False).permute(0, 2, 1)
+                                                            size=sequence_length, 
+                                                            mode='linear', 
+                                                            align_corners=False).permute(0, 2, 1)
         else:
             new_decoder_pos_embed = self.decoder_pos_embed
 
         tgt_embedding = self.embedding(tgt_with_bos)
-        # THe shape of the tgt_embedding in the forward method is torch.Size([1, 100, 64]) which is batch_size, seq_ln and dim and the seq_ln keeps increasing
         tgt_embedding = self.decoder_pos_drop(tgt_embedding + new_decoder_pos_embed)
 
         encoder_out = self.encoder_pos_drop(encoder_out + self.encoder_pos_embed)
-        # THe shape of the encoder_out in the forward method is torch.Size([1, 196, 64]) which is batch_size, num_patches and dim
         encoder_out = encoder_out.transpose(0, 1)
         tgt_embedding = tgt_embedding.transpose(0, 1)
 
-        preds = self.decoder(memory=encoder_out, tgt=tgt_embedding, tgt_mask=None, tgt_key_padding_mask=None)
+        # Generate autoregressive mask and padding mask for tgt
+        tgt_mask, tgt_padding_mask = create_mask(tgt_with_bos)  # Corrected to pass `tgt` directly
+        # print("The shape of tgt_mask is ", tgt_mask.shape)
+        # print("The shape of tgt_padding_mask is ", tgt_padding_mask.shape)
+
+
+        preds = self.decoder(memory=encoder_out, tgt=tgt_embedding, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask)
         preds = preds.transpose(0, 1)
 
         return self.output(preds)
+
 
     
     def predict(self, encoder_out, tgt):

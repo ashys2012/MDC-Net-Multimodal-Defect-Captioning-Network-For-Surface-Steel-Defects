@@ -125,9 +125,9 @@ CFG.bos_idx = tokenizer.BOS_code
 CFG.pad_idx = tokenizer.PAD_code
 
 
-encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=64)
+encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=128)
 decoder = Decoder(vocab_size=305, #complete_vocab_size, #tokenizer.vocab_size,
-                  encoder_length=CFG.num_patches, dim=64, num_heads=2, num_layers=2)
+                  encoder_length=CFG.num_patches, dim=128, num_heads=4, num_layers=4)
 model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
@@ -167,7 +167,7 @@ transform_pipeline = get_transform_inference(size)
 
 
 # Load the model and weights
-model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/best_model_epoch_189.pth'
+model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/best_model_epoch_6.pth'
 model.load_state_dict(torch.load(model_weights_path, map_location=CFG.device))
 
 # Process the image(s)

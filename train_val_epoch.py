@@ -26,7 +26,7 @@ CFG.pad_idx = tokenizer.PAD_code
 
 
 
-def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=None, iou_loss_weight=0.7):
+def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=None, iou_loss_weight = CFG.iou_loss_weight):
     model.train()
     loss_meter = AvgMeter()
     giou_loss_meter = AvgMeter()  # For tracking IoU loss separately
@@ -41,11 +41,15 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)   
         y_input = y[:, :-1]
         y_expected = y[:, 1:]                                                   #The shape of y_expected is torch.Size([64, 99])
+        #print("The shape of y_expected is", y_expected.shape)
         y_expected_adjusted = y[:, 1:].reshape(-1)                              #The shape of y_expected_adjusted is torch.Size([6336]) (99*64)
+        #print("The shape of y_expected_adjusted is", y_expected_adjusted.shape)
 
         preds = model(x, y_input)
-        preds = preds[:, :-1]                                                    #The shape of preds is torch.Size([64, 99, 305])
+        preds = preds[:, :-1]                                                   # The forced BOS tesnor is removed hence this is commented and the shape of preds is torch.Size([64, 99, 305])
         predicted_classes = torch.argmax(preds, dim=-1)                          #The shape of predicted_classes is torch.Size([64, 99])
+        #print(f"Preds shape: {preds.reshape(-1, preds.shape[-1]).shape}")
+
 
 
         # #Label cross entropy loss calculations
@@ -283,7 +287,7 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         l1_norm = sum(p.abs().sum() for p in model.parameters())
         
         # Combine losses
-        ce_loss_weight = 0.05
+        ce_loss_weight = 1 - CFG.iou_loss_weight
         total_loss = ce_loss_weight * ce_loss + l1_lambda * l1_norm + iou_loss_weight * giou_bbox_loss
 
 
@@ -330,8 +334,7 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
     total_loss_meter = AvgMeter()  # For tracking the combined total loss
     tqdm_object = tqdm(valid_loader, total=len(valid_loader))
     log_df = pd.DataFrame()  # Initialize logging dataframe
-    batch_counter = 0  # Initialize batch counter
-    log_data = []
+
     
     with torch.no_grad():
         for x, y in tqdm_object:
@@ -483,6 +486,78 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
             tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, giou_loss=giou_loss_meter.avg)
 
+    return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg
+
+
+
+def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images',logger = None, epoch_num=None):
+    model.eval()
+    batch_counter = 0  # Initialize batch counter
+    log_data = []
+    
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    with torch.no_grad():
+        for batch_idx, (x, y) in enumerate(test_loader):
+            x = x.to(CFG.device)
+            #print("The shape of x is", x.shape)
+            # Assuming y contains both the captions and bounding boxes information
+            y_input = y[:, :-1].to(CFG.device)
+            y_expected = y[:, 1:]
+
+            # Generate predictions
+            preds = model.predict(x, y_input)[:, :-1]
+            predicted_classes = torch.argmax(preds, dim=-1)
+            
+            # Decode predictions to get captions and bounding boxes
+            predicted_captions = tokenizer.decode_captions(torch.argmax(preds, dim=-1))
+
+
+
+            tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+            predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)  # Ensure this function exists and works as expected
+
+            # BLEU score calculations for captions
+            tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
+            caption_grnd_truth = tokenizer.decode_captions(y_expected)
+
+            captions_preds = tokenizer.decode_captions(tokens_caps_bbox)
+            captions_preds_list = captions_preds.cpu().tolist()
+            caption_grnd_truth_list = [caption_grnd_truth.cpu().tolist()]
+
+            chencherry = SmoothingFunction()
+            bleu_score = sentence_bleu(caption_grnd_truth_list, captions_preds_list, smoothing_function=chencherry.method1)
+
+            # Log BLEU score
+            if logger is not None:
+                logger.log({"Testing BLEU Score": bleu_score})
+
+
+            
+            # IoU and GIoU loss calculations
+            predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)
+            ground_truth_bboxes = tokenizer.decode_bboxes(y_expected)
+
+            iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
+            max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
+            
+            if len(max_ious) > 0:
+                average_iou_score = sum(max_ious) / len(max_ious)
+                # Log average IoU score
+                if logger is not None:
+                    logger.log({"Testing Average IoU score": average_iou_score})
+
+            giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
+            # Log GIoU bbox loss and score batch
+            if logger is not None:
+                logger.log({
+                    "Testing GIoU BBox Loss": giou_bbox_loss,
+                    "Testing GIoU BBox Score Batch": giou_bbox_score_batch,
+                    "Testing Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+                })
+
+            
             batch_counter += 1
 
             log_temp = {
@@ -498,70 +573,42 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
         
 
-        # After completing the loop for all batches in an epoch
-        log_df = pd.DataFrame(log_data)  # Convert your accumulated log data into a DataFrame
+            # After completing the loop for all batches in an epoch
+            log_df = pd.DataFrame(log_data)  # Convert your accumulated log data into a DataFrame
 
-        # Append this epoch's log DataFrame to the Excel file
-        output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_march/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
-        append_df_to_csv(output_file_path, log_df)
-
-
-
-    return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg
+            # Append this epoch's log DataFrame to the Excel file
+            output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_march/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            append_df_to_csv(output_file_path, log_df)
 
 
 
-def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images', epoch_num=None):
-    model.eval()
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
 
-    with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(test_loader):
-            x = x.to(CFG.device)
-            #print("The shape of x is", x.shape)
-            # Assuming y contains both the captions and bounding boxes information
-            y_input = y[:, :-1].to(CFG.device)
-
-            # Generate predictions
-            preds = model(x, y_input)[:, :-1]
-            
-            # Decode predictions to get captions and bounding boxes
-            predicted_captions = tokenizer.decode_captions(torch.argmax(preds, dim=-1))
-
-
-
-            tokens_caps_bbox = top_k_sampling(preds.reshape(-1, preds.size(-1)), k=5).reshape(preds.size(0), -1)
-            predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)  # Ensure this function exists and works as expected
-
-            
             
             # Convert batch of tensors to numpy images and process each image
             # Convert batch of tensors to numpy images and process each image
-            images_np = x.cpu().numpy()
-            num_items = min(x.size(0), predicted_captions.size(0))
-            for i in range(num_items):  # Iterate over the range of num_items instead
-                image_np = images_np[i]
+            # images_np = x.cpu().numpy()
+            # num_items = min(x.size(0), predicted_captions.size(0))
+            # for i in range(num_items):  # Iterate over the range of num_items instead
+            #     image_np = images_np[i]
 
-                # Ensure the image data is in the range [0, 255] if it was normalized
-                image_np = (image_np * 255).astype(np.uint8)
+            #     # Ensure the image data is in the range [0, 255] if it was normalized
+            #     image_np = (image_np * 255).astype(np.uint8)
 
-                # Rearrange the array from (C, H, W) to (H, W, C) for PIL compatibility
-                image_np = np.transpose(image_np, (1, 2, 0))
+            #     # Rearrange the array from (C, H, W) to (H, W, C) for PIL compatibility
+            #     image_np = np.transpose(image_np, (1, 2, 0))
 
-                # Now convert to a PIL Image
-                image_pil = Image.fromarray(image_np).convert('RGB')
+            #     # Now convert to a PIL Image
+            #     image_pil = Image.fromarray(image_np).convert('RGB')
 
-                # Example of adjusting the call for bboxes and captions
-                bboxes = [list(map(int, bbox)) for bbox in predicted_bboxes[i].tolist()] if predicted_bboxes[i].dim() > 0 else []
-                print("The bboxes is in the test epoch is", bboxes)
-                captions = predicted_captions[i].tolist() if predicted_captions[i].dim() > 0 else []
-                print("The captions is in the test epoch is", captions)
+            #     # Example of adjusting the call for bboxes and captions
+            #     bboxes = [list(map(int, bbox)) for bbox in predicted_bboxes[i].tolist()] if predicted_bboxes[i].dim() > 0 else []
+            #     #print("The bboxes is in the test epoch is", bboxes)
+            #     captions = predicted_captions[i].tolist() if predicted_captions[i].dim() > 0 else []
+            #     #print("The captions is in the test epoch is", captions)
 
-                # Now, bboxes and captions are both lists, and we can safely attempt to draw them
-                draw_bbox_with_caption(image_pil, bboxes, captions)
+            #     # Now, bboxes and captions are both lists, and we can safely attempt to draw them
+            #     draw_bbox_with_caption(image_pil, bboxes, captions)
 
-                # Save the image with unique naming including epoch number
-                filename = f'test_image_epoch{epoch_num}_batch{batch_idx}_img{i}.png'
-                image_pil.save(os.path.join(save_dir, filename))
+            #     # Save the image with unique naming including epoch number
+            #     filename = f'test_image_epoch{epoch_num}_batch{batch_idx}_img{i}.png'
+            #     image_pil.save(os.path.join(save_dir, filename))

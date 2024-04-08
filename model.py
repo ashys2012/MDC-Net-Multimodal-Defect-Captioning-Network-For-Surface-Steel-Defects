@@ -127,17 +127,55 @@ class Decoder(nn.Module):
         return output_with_bos
     
 
+# class EncoderDecoder(nn.Module):
+#     def __init__(self, encoder, decoder):
+#         super().__init__()
+#         self.encoder = encoder
+#         self.decoder = decoder
+    
+#     def forward(self, image, tgt):
+#         encoder_out = self.encoder(image)
+#         preds = self.decoder(encoder_out, tgt)
+#         return preds
+#     def predict(self, image, tgt):
+#         encoder_out = self.encoder(image)
+#         preds = self.decoder.predict(encoder_out, tgt)
+#         return preds
+    
+    import torch
+
 class EncoderDecoder(nn.Module):
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, decoder, patch_dropout_rate=0.02):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.patch_dropout_rate = patch_dropout_rate  # Dropout rate for patch embeddings
     
     def forward(self, image, tgt):
         encoder_out = self.encoder(image)
+        
+        # Apply patch dropout to simulate masking using Uniform Random Sampling
+        if self.training:  # Only during training
+            batch_size, num_patches, embedding_dim = encoder_out.shape
+            num_to_mask = int(num_patches * self.patch_dropout_rate)  # Calculate the number of patches to mask
+            
+            # Ensure at least one patch is always masked if the dropout rate is > 0
+            num_to_mask = max(1, num_to_mask)
+            
+            # Create a mask for the patches
+            mask = torch.ones((batch_size, num_patches, 1), device=encoder_out.device)
+            
+            for i in range(batch_size):
+                indices_to_mask = torch.randperm(num_patches)[:num_to_mask]  # Randomly select patches to mask
+                mask[i, indices_to_mask, :] = 0  # Apply masking
+                
+            encoder_out = encoder_out * mask  # Mask the encoder output
+        
         preds = self.decoder(encoder_out, tgt)
         return preds
+    
     def predict(self, image, tgt):
+        # Ensure dropout is not applied during prediction
         encoder_out = self.encoder(image)
         preds = self.decoder.predict(encoder_out, tgt)
         return preds

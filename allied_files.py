@@ -13,7 +13,7 @@ def seed_everything(seed=42):
 
 
 class CFG:
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
     max_len = 100
     img_size = 224
@@ -33,7 +33,7 @@ class CFG:
     l1_lambda = 1e-7             #kept high as the model is complex
     patience = 40
     iou_loss_weight = 0.5
-    model_save_path = "/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/"
+    model_save_path = "/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_1"
 
 
 #below is from the original

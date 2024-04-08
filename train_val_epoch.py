@@ -16,6 +16,8 @@ from utilities import append_df_to_csv, draw_bbox_with_caption
 import os
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+from utils import calculate_bleu_scores
+from collections import defaultdict
 
 
 vocab = Vocabulary(freq_threshold=5)
@@ -36,6 +38,9 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
     l1_lambda = CFG.l1_lambda  # L1 regularization strength
     iou_losses = torch.tensor([], device=CFG.device)
     no_box_penalty = .0  # Penalty for no predicted boxes
+    epoch_captions_preds_list = []
+    epoch_caption_grnd_truth_list = []
+
 
     for x, y in tqdm_object:
         x, y = x.to(CFG.device, non_blocking=True), y.to(CFG.device, non_blocking=True)   
@@ -88,7 +93,45 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
                            smoothing_function=chencherry.method1)
 
         if logger is not None:
-            logger.log({"BLEU Score trainng is": bleu_score})
+            logger.log({"Normal BLEU Score training is": bleu_score})
+
+
+        #Epoch wise Bleu Score avg calculation
+        # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
+        epoch_captions_preds_list.extend(captions_preds_list)
+        epoch_caption_grnd_truth_list.extend(caption_grnd_truth_list[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
+
+        # Make sure the ground truth list is in the correct format for BLEU calculation
+        epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
+
+        # Compute BLEU score for the entire epoch
+        chencherry = SmoothingFunction()
+        bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
+
+        # Log the epoch BLEU score
+        if logger is not None:
+            logger.log({"Epoch BLEU Score": bleu_score_epoch})
+
+
+        #ALternate bleu score calculations
+        # Convert the ground truth and predictions to text
+        # Define the stoi and itos dictionaries as provided
+        stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
+        itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+
+        # Reverse the stoi dictionary to be able to use ids to get tokens
+        itos = defaultdict(lambda: '<UNK>', itos)    
+
+        ground_truth_text = [tokenizer.tokens_to_text_new(caption, itos) for caption in caption_grnd_truth_list]
+        predictions_text = tokenizer.tokens_to_text_new(captions_preds_list, itos)
+
+        # Calculate BLEU scores
+        bleu_scores_trial = calculate_bleu_scores(ground_truth_text[0], predictions_text)  # Only one ground truth set in this case
+        if logger is not None:
+            logger.log({"BLEU Score for training with text is": bleu_scores_trial})
+
+
+
 
         #IoU loss calculations
         predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox) 
@@ -141,23 +184,23 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         # Step 2: Initialize the mAP metric
         # Adjust parameters according to your specific needs, for example, setting different IoU thresholds
         # Example of specifying IoU thresholds as a list
-        iou_thresholds = [0.5]  # This can be a list of thresholds if needed
+        iou_thresholds = [0.3]  # This can be a list of thresholds if needed
 
         map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
 
         # Step 3: Update the metric with your predictions and targets
         # Assuming preds and targets_formatted are your prediction and ground truth data
         # Since your data is already on CUDA, ensure torchmetrics is also using the same device
-        map_metric = map_metric.to('cuda:0')
+        map_metric = map_metric.to(CFG.device)
 
 
 
         for pred, target in zip(preds_formatted, targets_formatted):
             if pred['scores'].nelement() == 0:  # Checks if there are no scores
                 pred = {
-                    "boxes": torch.empty((0, 4), device='cuda:0'),
-                    "scores": torch.empty((0,), device='cuda:0'),
-                    "labels": torch.empty((0,), dtype=torch.int64, device='cuda:0')
+                    "boxes": torch.empty((0, 4), device=CFG.device),
+                    "scores": torch.empty((0,), device=CFG.device),
+                    "labels": torch.empty((0,), dtype=torch.int64, device=CFG.device)
                 }
             map_metric.update([pred], [target])
 
@@ -334,6 +377,12 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
     total_loss_meter = AvgMeter()  # For tracking the combined total loss
     tqdm_object = tqdm(valid_loader, total=len(valid_loader))
     log_df = pd.DataFrame()  # Initialize logging dataframe
+    # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
+    epoch_captions_preds_list = []
+    epoch_caption_grnd_truth_list = []
+
+
+
 
     
     with torch.no_grad():
@@ -361,6 +410,49 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
             # Log BLEU score
             if logger is not None:
                 logger.log({"Validation BLEU Score": bleu_score})
+
+
+
+                    #Epoch wise Bleu Score avg calculation
+            # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
+            epoch_captions_preds_list.extend(captions_preds_list)
+            epoch_caption_grnd_truth_list.extend(caption_grnd_truth_list[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
+
+            # Make sure the ground truth list is in the correct format for BLEU calculation
+            epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
+
+            # Compute BLEU score for the entire epoch
+            chencherry = SmoothingFunction()
+            bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
+
+            # Log the epoch BLEU score
+            if logger is not None:
+                logger.log({"Epoch BLEU Score": bleu_score_epoch})
+
+
+            #ALternate bleu score calculations
+            # Convert the ground truth and predictions to text
+            # Define the stoi and itos dictionaries as provided
+            stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
+            itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+
+            # Reverse the stoi dictionary to be able to use ids to get tokens
+            itos = defaultdict(lambda: '<UNK>', itos)    
+
+            ground_truth_text = [tokenizer.tokens_to_text_new(caption, itos) for caption in caption_grnd_truth_list]
+            predictions_text = tokenizer.tokens_to_text_new(captions_preds_list, itos)
+
+            # Calculate BLEU scores
+            bleu_scores_trial = calculate_bleu_scores(ground_truth_text[0], predictions_text)  # Only one ground truth set in this case
+            if logger is not None:
+                logger.log({"BLEU Score for validation with text is": bleu_scores_trial})
+
+
+
+
+
+
+        
 
             # IoU and GIoU loss calculations
             predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)
@@ -431,23 +523,23 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
             # Step 2: Initialize the mAP metric
             # Adjust parameters according to your specific needs, for example, setting different IoU thresholds
             # Example of specifying IoU thresholds as a list
-            iou_thresholds = [0.5]  # This can be a list of thresholds if needed
+            iou_thresholds = [0.3]  # This can be a list of thresholds if needed
 
             map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
 
             # Step 3: Update the metric with your predictions and targets
             # Assuming preds and targets_formatted are your prediction and ground truth data
             # Since your data is already on CUDA, ensure torchmetrics is also using the same device
-            map_metric = map_metric.to('cuda:0')
+            map_metric = map_metric.to(CFG.device)
 
 
 
             for pred, target in zip(preds_formatted, targets_formatted):
                 if pred['scores'].nelement() == 0:  # Checks if there are no scores
                     pred = {
-                        "boxes": torch.empty((0, 4), device='cuda:0'),
-                        "scores": torch.empty((0,), device='cuda:0'),
-                        "labels": torch.empty((0,), dtype=torch.int64, device='cuda:0')
+                        "boxes": torch.empty((0, 4), device=CFG.device),
+                        "scores": torch.empty((0,), device=CFG.device),
+                        "labels": torch.empty((0,), dtype=torch.int64, device=CFG.device)
                     }
                 map_metric.update([pred], [target])
 
@@ -490,7 +582,7 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
 
 
-def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images',logger = None, epoch_num=None):
+def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/test_output_images',logger = None, epoch_num=None):
     model.eval()
     batch_counter = 0  # Initialize batch counter
     log_data = []
@@ -534,6 +626,27 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
                 logger.log({"Testing BLEU Score": bleu_score})
 
 
+
+
+
+            #ALternate bleu score calculations
+            # Convert the ground truth and predictions to text
+            # Define the stoi and itos dictionaries as provided
+            stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
+            itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+
+            # Reverse the stoi dictionary to be able to use ids to get tokens
+            itos = defaultdict(lambda: '<UNK>', itos)    
+
+            ground_truth_text = [tokenizer.tokens_to_text_new(caption, itos) for caption in caption_grnd_truth_list]
+            predictions_text = tokenizer.tokens_to_text_new(captions_preds_list, itos)
+
+            # Calculate BLEU scores
+            bleu_scores_trial = calculate_bleu_scores(ground_truth_text[0], predictions_text)  # Only one ground truth set in this case
+            if logger is not None:
+                logger.log({"BLEU Score for Testing with text is": bleu_scores_trial})
+
+
             
             # IoU and GIoU loss calculations
             predicted_bboxes = tokenizer.decode_bboxes(tokens_caps_bbox)
@@ -562,8 +675,8 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
 
             log_temp = {
             'epoch_batch': f"Epoch_{epoch_num}_Batch_{batch_counter}",
-            'captions_preds_list': [captions_preds_list],
-            'caption_grnd_truth_list': [caption_grnd_truth_list],
+            'captions_preds_list': [predictions_text],
+            'caption_grnd_truth_list': [ground_truth_text],
             'predicted_bboxes': [predicted_bboxes.tolist()],  # Assuming predicted_bboxes is a tensor
             'ground_truth_bboxes': [ground_truth_bboxes.tolist()],  # Assuming ground_truth_bboxes is a tensor
             'predicted_classes': [predicted_classes.tolist()],  # Assuming predicted_classes is a tensor
@@ -577,7 +690,7 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
             log_df = pd.DataFrame(log_data)  # Convert your accumulated log data into a DataFrame
 
             # Append this epoch's log DataFrame to the Excel file
-            output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_march/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
             append_df_to_csv(output_file_path, log_df)
 
 

@@ -37,12 +37,12 @@ import torch
 import torch.nn as nn
 
 
-txt_file_path = "/mnt/sdb/2024/pix_2_seq_with_captions_march/annotations_summary_fin.txt"
-image_folder = "/mnt/sdb/2024/pix_2_seq_with_captions_march/images"
+txt_file_path = "/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/annotations_summary.txt"
+image_folder = "/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/data/images"
 
 df = txt_file_to_df(txt_file_path, image_folder)
 df['img_path'] = df['img_path'].apply(lambda x: f"{x}.jpg" if not x.lower().endswith('.jpg') else x)
-df = df[~df['ids'].isin(['patches_211.jpg', 'scratches_211.jpg'])]
+#df = df[~df['ids'].isin(['patches_211.jpg', 'scratches_211.jpg'])]
 
 # Validate and Filter Invalid Image Paths
 existing_img_paths = df['img_path'].apply(lambda x: os.path.exists(x))
@@ -57,7 +57,7 @@ df = df[existing_img_paths].reset_index(drop=True)
 #     print("All bboxes are valid.")
 
 print("The device is:", CFG.device)
-print("The df is of length:", len(df))
+print("The df is of length before concatenated:", len(df))
 print("All image paths in the DataFrame exist.")
 
 # Check for a specific file existence
@@ -68,17 +68,23 @@ else:
     print(f"The file '{file_path}' does not exist.")
 
 
-# Apply concat_gt to include bounding boxes (captions are handled separately)
-df['concatenated'] = df.apply(concat_gt, axis=1)
+# # Apply concat_gt to include bounding boxes (captions are handled separately)
+# df['concatenated'] = df.apply(concat_gt, axis=1)
 
-# # Group by 'ids' and aggregate data
-df = df.groupby('ids').agg({
-    'concatenated': lambda x: list(x),  # Aggregates bounding boxes into a list per 'ids'
-    'img_path': 'first',  # Assumes img_path is the same for all entries with the same 'ids'
-    'caption': 'first'  # Captures the single caption associated with each 'ids'
-}).reset_index()
+# print("THe original df length is before feeding into the get_loaders is and after concatenated is:", len(df))
 
-df['concatenated'] = df.apply(lambda row: row['concatenated'], axis=1)
+# df = df.groupby('img_path').agg({
+#     'concatenated': lambda x: list(x),  # Aggregates bounding boxes into a list per image
+#     'ids': 'first',  # Captures the single label associated with each image
+#     'caption': 'first'  # Assumes caption is the same for all entries with the same image
+# }).reset_index()
+
+# print(df.head())
+
+
+# print("THe original df length is before feeding into the get_loaders is and after df.groupby is:", len(df))
+
+# df['concatenated'] = df.apply(lambda row: row['concatenated'], axis=1)
 
 
 
@@ -88,7 +94,7 @@ all_captions = df['caption'].tolist()
 
 vocab = Vocabulary(freq_threshold=5)
 vocab.build_vocab(all_captions) 
-tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
+tokenizer = Tokenizer(vocab, num_classes=10, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
 CFG.bos_idx = tokenizer.BOS_code
 CFG.pad_idx = tokenizer.PAD_code
@@ -126,7 +132,7 @@ import wandb
 
 #Initialize wandb and pass configuration from CFG class
 
-wandb.init(project="pix_2_seq_march_224_autoregresive", entity="ashys2012", config={
+wandb.init(project="pix_2_seq_march_224_gc_10_ds", entity="ashys2012", name = "server_v_large_1024_8_8_patch_dr_002_iou_03_cyclic_lr_total_vocab_size_correct_num_cls", config={
     "device": CFG.device.type,  # Logging the device type as a string
     "max_len": CFG.max_len,
     "img_size": CFG.img_size,
@@ -147,9 +153,11 @@ wandb.init(project="pix_2_seq_march_224_autoregresive", entity="ashys2012", conf
 
 logger = wandb
 
-encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=128)
-decoder = Decoder(vocab_size=305, #complete_vocab_size, #tokenizer.vocab_size,
-                  encoder_length=CFG.num_patches, dim=128, num_heads=4, num_layers=4)
+#logger = None
+
+encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=1024)
+decoder = Decoder(vocab_size=total_vocab_size, #complete_vocab_size, #tokenizer.vocab_size,
+                  encoder_length=CFG.num_patches, dim=1024, num_heads=8, num_layers=8)
 model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
@@ -173,7 +181,7 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
         model.eval()
         valid_loss, avg_giou, total_loss = valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=CFG.iou_loss_weight, logger=logger, epoch_num=epoch)
         
-        test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_march/test_output_images',logger=logger, epoch_num=epoch)
+        test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/test_output_images',logger=logger, epoch_num=epoch)
         # Update the learning rate based on warmup scheduler if step is 'epoch'
         if lr_scheduler is not None and step == 'epoch':
             lr_scheduler.step()
@@ -214,7 +222,9 @@ max_lr = 1e-4   # Maximum learning rate
 step_size_up = len(train_loader) // 2  # Half an epoch to ramp up
 
 lr_scheduler = CyclicLR(optimizer, base_lr=base_lr, max_lr=max_lr, step_size_up=step_size_up, mode='triangular', cycle_momentum=False)
-
+# lr_scheduler = get_linear_schedule_with_warmup(optimizer,
+#                                                num_training_steps=num_training_steps,
+#                                                num_warmup_steps=num_warmup_steps)
 
 criterion = nn.CrossEntropyLoss(ignore_index=CFG.pad_idx) #alpha=1, gamma=2, 
 

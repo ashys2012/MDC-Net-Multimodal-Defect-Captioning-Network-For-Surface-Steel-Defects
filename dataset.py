@@ -90,9 +90,9 @@ def txt_file_to_df(txt_file_path, image_folder):
 
 def get_transform_train(size):
     return A.Compose([
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.Rotate(limit=30, p=0.5),
+        #A.HorizontalFlip(p=0.5),
+        #A.VerticalFlip(p=0.5),
+        #A.Rotate(limit=30, p=0.5),
         A.RandomBrightnessContrast(p=0.2),
         A.GaussianBlur(blur_limit=(3, 7), p=0.5),
         A.MotionBlur(blur_limit=3, p=0.5),
@@ -108,8 +108,8 @@ def get_transform_train(size):
 
 def get_transform_valid(size):
     return A.Compose([
-        A.Resize(size, size)
-        #A.Normalize(),
+        A.Resize(size, size),
+        A.Normalize(),
     ], bbox_params={'format': 'pascal_voc', 'label_fields': ['labels']})
 
 
@@ -117,45 +117,49 @@ def get_transform_valid(size):
 
 
 
-def collate_fn(batch, max_len, pad_idx):
-    """
-    if max_len:
-        the sequences will all be padded to that length
-    """
-    # print("Number of samples in batch:", len(batch))
-    # for i, sample in enumerate(batch):
-    #     print(f"Number of elements in sample {i}: {len(sample)}")
-        #print(f"Types of elements in sample {i}: {[type(x) for x in sample]}")
-    # rest of your code
+from torch.nn.utils.rnn import pad_sequence
+import torch
 
+def collate_fn(batch, max_len, pad_idx):
     image_batch, seq_batch = [], []
     for sample in batch:
-        #print("Received batch lengths:", [len(sample) for sample in batch])
-        #print("The batch is ",batch)
-        if len(sample) == 2:
-            image, seqs = sample
-            #caption = None  # or some default value
-        elif len(sample) == 4:
-            image, labels, bboxes, caption = sample
-            seqs = ...  # Generate seqs based on labels and bboxes
-        else:
-            raise ValueError("Unexpected number of values in sample")
-        #print("Received batch:", batch)
+        image, seqs = sample[:2]  # Assuming the first two values are always present and seqs is correctly formatted
         image_batch.append(image)
-        seq_batch.append(seqs)
-        #caption_batch.append(caption)
 
-    seq_batch = pad_sequence(
-        seq_batch, padding_value=pad_idx, batch_first=True)
-    if max_len:
-        pad = torch.ones(seq_batch.size(0), max_len -
-                         seq_batch.size(1)).fill_(pad_idx).long()
-        seq_batch = torch.cat([seq_batch, pad], dim=1)
-    image_batch = torch.stack(image_batch)
-    #print("The seq_batch is inside the collate fucntion is", seq_batch)
-    #print("The seq_batch shape is inside the collate fucntion is", seq_batch.shape)
+        # Ensure seqs is a flat list; this might need adjustment based on actual structure
+        flat_seqs = [item for sublist in seqs for item in sublist] if isinstance(seqs[0], list) else seqs
+        seq_batch.append(torch.tensor(flat_seqs, dtype=torch.long))
 
-    return image_batch, seq_batch#, caption_batch
+    # Ensure all sequences are padded to the same length
+    seq_batch_padded = pad_sequence(seq_batch, padding_value=pad_idx, batch_first=True)
+    return torch.stack(image_batch), seq_batch_padded
+
+
+
+
+
+    
+        # # Pad sequences to the longest sequence in the batch
+        # seq_batch_padded = pad_sequence(seq_batch, padding_value=pad_idx, batch_first=True)
+        # print(f"seq_batch_padded dimensions in the collate funciton is: {seq_batch_padded.shape}")
+        
+        
+        # # Truncate or further pad the sequences to max_len
+        # if max_len and seq_batch_padded.size(1) > max_len:
+        #     seq_batch_padded = seq_batch_padded[:, :max_len]
+        #     print(f"seq_batch_padded dimensions in the collate funciton is: {seq_batch_padded.shape}")
+        # elif max_len and seq_batch_padded.size(1) < max_len:
+        #     additional_pad = torch.full((seq_batch_padded.size(0), max_len - seq_batch_padded.size(1)), pad_idx, dtype=torch.long)
+        #     print(f"additional_pad dimensions in the collate funciton is: {additional_pad.shape}")
+        #     seq_batch_padded = torch.cat([seq_batch_padded, additional_pad], dim=1)
+
+            
+
+
+        # image_batch = torch.stack(image_batch)
+        
+        # return image_batch, seq_batch_padded
+
 
 
 

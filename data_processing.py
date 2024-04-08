@@ -20,12 +20,16 @@ class Vocabulary:
 
         # Predefined indices for specific words
         self.predefined_indices = {
-            'patches': 262,
-            'inclusion': 263,
-            'rolled-in_scale': 260,
-            'pitted_surface': 261,
-            'crazing': 258,
-            'scratches': 259
+            'oil_spot': 262,
+            'inclusion': 264,
+            'crescent_gap': 260,
+            'water_spot': 261,
+            'punching_hole': 258,
+            'welding_line': 259,
+            'silk_spot': 263,
+            'rolled_pit': 265,
+            'crease': 266,
+            'waist_folding': 267
         }
 
     def __len__(self):
@@ -33,7 +37,7 @@ class Vocabulary:
 
     @staticmethod
     def tokenize(text):
-        compound_words = ['rolled-in_scale', 'pitted_surface', 'crazing', 'scratches']
+        compound_words = ['inclusion','rolled-oil_spot', 'crescent_gap', 'water_spot', 'water_spot', 'punching_hole', 'welding_line', 'silk_spot', 'rolled_pit', 'crease', 'waist_folding']
 
         # Replace compound words with placeholders
         placeholders = {}
@@ -90,51 +94,71 @@ class Vocabulary:
 vocab = Vocabulary(freq_threshold=5)
 
 
+import os
+import cv2
+import torch
+from torch.utils.data import Dataset
+
+
+
+
+import torch
+import pandas as pd
+import os
+import cv2
+
 class VOCDataset(torch.utils.data.Dataset):
     def __init__(self, df, transforms=None, tokenizer=None):
-        self.ids = df['ids'].unique()
-        self.df = df
+        self.entries = self._flatten_dataframe(df)
         self.transforms = transforms
         self.tokenizer = tokenizer
 
+    def _flatten_dataframe(self, df):
+        entries = []
+        for _, row in df.iterrows():
+            # Directly create a tuple from the bounding box coordinates
+            bbox = (row['xmin'], row['ymin'], row['xmax'], row['ymax'])
+            entries.append({
+                'img_path': row['img_path'],
+                'bbox': bbox,
+                'caption': row['caption'],
+                'label': row['label']  # If you need the label
+            })
+        return entries
+
+
     def __getitem__(self, idx):
-        sample = self.df[self.df['ids'] == self.ids[idx]]
-        #print("The sample is:", sample)
-        img_path = sample['img_path'].values[0]
+        entry = self.entries[idx]
+        img_path = entry['img_path']
         if not os.path.exists(img_path):
             print(f"Warning: The file '{img_path}' does not exist. Skipping.")
             return None
 
         img = cv2.imread(img_path)[..., ::-1]  # Convert BGR to RGB
-
-        concatenated = sample['concatenated'].values[0]  # Assuming one entry per 'ids'
-        labels = [item[0] for item in concatenated]  # Extracting labels from 'concatenated'
-        #print("labels in Vocdataset gives you", labels)
-        bboxes = [item[1:5] for item in concatenated]  # Extracting bbox coordinates
-        #print("bboxes in Vocdataset gives you", bboxes)
-        caption = sample['caption'].values[0]  # Assuming one caption per 'ids'
-        #print("caption in Vocdataset gives you", caption)
-        
+        bbox = [entry['bbox']]  # Wrap bbox in a list to match expected format
+        caption = [entry['caption']]  # Similarly, wrap caption in a list
+        label = [entry['label']]  # Wrap label in a list
 
         if self.transforms is not None:
-            transformed = self.transforms(image=img, bboxes=bboxes, labels=labels)
+            transformed = self.transforms(image=img, bboxes=bbox, labels=label)
             img = transformed['image']
-            bboxes = transformed['bboxes']
-            labels = transformed['labels']
-            #print("bboxes transformed", bboxes)
+            bbox = transformed['bboxes']
+
         img = torch.FloatTensor(img).permute(2, 0, 1)  # Convert to torch tensor and permute to CxHxW
 
+        # Now call the tokenizer with all required arguments
         if self.tokenizer is not None:
-            seqs = self.tokenizer(labels, bboxes, [caption])  # Tokenizer expects a list of captions
-            seqs = torch.LongTensor(seqs)
-            #print("the seq in voc dataset is ", seqs)
-            return img, seqs
+            sequences = self.tokenizer(labels=label, bboxes=bbox, captions=caption)
+        else:
+            sequences = []
 
-        # If the tokenizer isn't provided, you might want to return the raw data or handle this case differently
-        return img, labels, bboxes, caption
+        # Note: Adjust the return statement based on how you intend to use `sequences` and what it contains
+        return img, sequences
 
     def __len__(self):
-        return len(self.ids)
+        return len(self.entries)
+
+
 
 
 
@@ -158,6 +182,8 @@ def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_worke
     train_ds = VOCDataset(train_df, transforms=get_transform_train(img_size), tokenizer=tokenizer)
     valid_ds = VOCDataset(valid_df, transforms=get_transform_valid(img_size), tokenizer=tokenizer)
     test_ds = VOCDataset(test_df, transforms=get_transform_valid(img_size), tokenizer=tokenizer)
+
+    print("train_ds", train_ds[0])
 
     # DataLoader for the training set
     train_loader = torch.utils.data.DataLoader(
@@ -188,6 +214,7 @@ def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_worke
         num_workers=num_workers,
         pin_memory=True,
     )
+    print("length of train_loader is", len(train_loader))
 
     return train_loader, valid_loader, test_loader
 
@@ -234,62 +261,44 @@ class Tokenizer:
         """
         return x.astype('float32') / (self.num_bins - 1)
 
-    def __call__(self, labels, bboxes, captions, shuffle=False):
-        #print("the original bboxes ", bboxes)
-        bboxes = np.array(bboxes, dtype=float)
-        #print("tha bboxes after they are converted to np array", bboxes)
-        labels = np.array(labels).astype('int')[:self.max_len]
-        #print("tha labels after they are converted to np array", labels)
-#         print("self.width is", self.width)
-#         print("self.height is", self.height)
+    def process_single_pair(self, label, bbox, caption):
+        bbox = np.array(bbox, dtype=float)
 
-        # Normalize bounding box coordinates and quantize
-        bboxes[:, 0] = bboxes[:, 0] / self.width
-        bboxes[:, 2] = bboxes[:, 2] / self.width
-        bboxes[:, 1] = bboxes[:, 1] / self.height
-        bboxes[:, 3] = bboxes[:, 3] / self.height
-        
-        #print("self.width is-------->",self.width )
-        
-#         print("Max bbox value before quantization:", np.max(bboxes))
-#         #print("Number of classes:", self.num_classes)
-#         print("The bbox values before quantization",bboxes)
-        bboxes = self.quantize(bboxes)[:self.max_len] #+ self.num_classes
-#         print("The bbox values after quantization",bboxes)
-        
-#         print("Max bbox value after the procss of quantizatioin", np.max(bboxes))
-
-        if shuffle:
-            rand_idxs = np.arange(len(bboxes))
-            np.random.shuffle(rand_idxs)
-            labels = labels[rand_idxs]
-            bboxes = bboxes[rand_idxs]
-            # Do not apply rand_idxs to captions since there's only one caption per image
+        # Normalize and quantize bbox coordinates
+        bbox[0] = bbox[0] / self.width
+        bbox[2] = bbox[2] / self.width
+        bbox[1] = bbox[1] / self.height
+        bbox[3] = bbox[3] / self.height
 
         tokenized = [self.BOS_code]
-        
-        # Tokenize the single caption assuming all captions are identical for shuffled bboxes
-        if not isinstance(captions, list):
-            captions = [captions] 
-        caption = captions[0]  # Take the first (and only) caption for tokenization
-        caption_tokens = [self.CAPTION_START]
+
+        # Tokenize and append the corresponding caption with start and end tokens
+        caption_tokens = [self.CAPTION_START]  # Start of caption
         caption_tokens.extend(self.vocab.numericalize(caption))
+        caption_tokens.append(self.CAPTION_END)  # End of caption
         tokenized.extend(caption_tokens)
-        tokenized.append(self.CAPTION_END)  # Mark the end of the caption
-        
-        
-        for label, bbox in zip(labels, bboxes):
-            # First append the label
-            tokenized.append(label)
 
-            # Then extend the tokenized list with the bbox coordinates
-            tokenized.extend(map(int, bbox))
+        # Tokenize and append the label
+        tokenized.append(label)
 
-
+        # Extend the tokenized list with the quantized bbox coordinates
+        quantized_bbox = self.quantize(np.array(bbox, dtype=float))
+        tokenized.extend(map(int, quantized_bbox))
 
         tokenized.append(self.EOS_code)
 
         return tokenized[:self.max_len]
+
+    def __call__(self, labels, bboxes, captions):
+        assert len(captions) == len(bboxes) == len(labels), "Each bbox must have a corresponding label and caption"
+        
+        sequences = []
+        for label, bbox, caption in zip(labels, bboxes, captions):
+            sequence = self.process_single_pair(label, bbox, caption)
+            sequences.append(sequence)
+        
+        return sequences
+
 
     
     def get_spacy_vocab_size(self):
@@ -707,23 +716,6 @@ class Tokenizer:
         return padded_bboxes, padded_labels
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
     #you can get alternate approach to extract the predicted labels in https://www.notion.so/Alternate-Label_loss-488ab964219a4f00a9fa22e066bc3886
     #this alternate aproach does not have pad_idx and uses 0 score probability to get the label
     def extract_predicted_labels_with_logits(self, logits):
@@ -764,9 +756,7 @@ class Tokenizer:
         return extracted_logits
 
 
-    
-
-    
+        
     def tokens_to_text(self, captions):
         # If captions is empty, return an empty list
         if not captions:
@@ -778,6 +768,25 @@ class Tokenizer:
 
         # Convert list of token lists back to list of caption texts
         return [" ".join([self.vocab.itos.get(token, '<UNK>') for token in caption]) for caption in captions]
+    
+    #below is an alternate fucntion created on 22nd March to look at the tokens to text
+    
+    # Define a function to convert tokens to text
+    def tokens_to_text_new(self, tokens_list, itos):
+        if not tokens_list:
+            return []
+        
+        # If tokens_list is a list of integers, wrap it in another list
+        if isinstance(tokens_list[0], int):
+            tokens_list = [tokens_list]
+
+        return [' '.join([itos[token] for token in tokens if itos[token] not in ['<PAD>', '<SOS>', '<EOS>', '<UNK>']]) for tokens in tokens_list]
+
+
+
+
+
+
     
 
 def top_k_sampling(logits, k):
@@ -824,4 +833,3 @@ def top_k_sampling_with_scores_2d(logits, k):
     sampled_scores = probs.gather(1, sampled_indices)
 
     return sampled_indices, sampled_scores
-

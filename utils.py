@@ -1,5 +1,7 @@
 import torch
 from allied_files import CFG
+from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import SmoothingFunction
 
 
 def generate_square_subsequent_mask(sz):
@@ -49,3 +51,13 @@ class AvgMeter:
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group["lr"]
+    
+
+def calculate_bleu_scores(ground_truths, predictions):
+    chencherry = SmoothingFunction()
+    scores = []
+    for ref, pred in zip(ground_truths, predictions):
+        # Wrap the reference in a list as expected by sentence_bleu
+        score = sentence_bleu([ref], pred, smoothing_function=chencherry.method1)
+        scores.append(score)
+    return scores

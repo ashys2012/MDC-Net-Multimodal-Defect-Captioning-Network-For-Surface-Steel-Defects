@@ -26,7 +26,7 @@ import torch
 from tqdm import tqdm
 
 max_ln = 100
-vocab_size = 305
+vocab_size = 332
 
 def decode_sequence(sequence, tokenizer):
     """
@@ -119,15 +119,15 @@ def inference_epoch_bbox(model, data_loader, tokenizer, logger=None):
 
 # # Example usage:
 vocab = Vocabulary(freq_threshold=5)
-tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
+tokenizer = Tokenizer(vocab, num_classes=11, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
 CFG.bos_idx = tokenizer.BOS_code
 CFG.pad_idx = tokenizer.PAD_code
 
 
-encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=128)
-decoder = Decoder(vocab_size=305, #complete_vocab_size, #tokenizer.vocab_size,
-                  encoder_length=CFG.num_patches, dim=128, num_heads=4, num_layers=4)
+encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=256)
+decoder = Decoder(vocab_size=332, #complete_vocab_size, #tokenizer.vocab_size,
+                  encoder_length=CFG.num_patches, dim=256, num_heads=8, num_layers=8)
 model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
@@ -167,11 +167,11 @@ transform_pipeline = get_transform_inference(size)
 
 
 # Load the model and weights
-model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/output_1/best_model_epoch_6.pth'
+model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_1/best_model_epoch_86.pth'
 model.load_state_dict(torch.load(model_weights_path, map_location=CFG.device))
 
 # Process the image(s)
-image_path = '/mnt/sdb/2024/pix_2_seq_with_captions_march/images/scratches_10.jpg'
+image_path = '/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/data/images/img_08_4406772100_00002.jpg'
 image_tensor = preprocess_image_for_inference(image_path, transform_pipeline)
 
 # Perform inference

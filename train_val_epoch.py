@@ -101,9 +101,19 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         #ALternate bleu score calculations
         # Convert the ground truth and predictions to text
         # Define the stoi and itos dictionaries as provided
-        stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
-        itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+        stoi = {
+            '<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'oil_spot': 262, 'inclusion': 264, 'crescent_gap': 260, 
+            'water_spot': 261, 'punching_hole': 258, 'welding_line': 259, 'silk_spot': 263, 'rolled_pit': 265, 'crease': 266, 
+            'waist_folding': 267, 'the': 270, 'defect': 271, 'is': 272, 'located': 273, 'at': 274, 'center': 275, 
+            'of': 276, 'image': 277, '.': 278, 'right': 279, 'bottom': 280, 'top': 281, 'left': 282
+}
 
+        itos = {
+            302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'oil_spot', 264: 'inclusion', 260: 'crescent_gap', 
+            261: 'water_spot', 258: 'punching_hole', 259: 'welding_line', 263: 'silk_spot', 265: 'rolled_pit', 266: 'crease', 
+            267: 'waist_folding', 270: 'the', 271: 'defect', 272: 'is', 273: 'located', 274: 'at', 275: 'center', 
+            276: 'of', 277: 'image', 278: '.', 279: 'right', 280: 'bottom', 281: 'top', 282: 'left'
+        }
         # Reverse the stoi dictionary to be able to use ids to get tokens
         itos = defaultdict(lambda: '<UNK>', itos)    
 
@@ -423,8 +433,26 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
             #ALternate bleu score calculations
             # Convert the ground truth and predictions to text
             # Define the stoi and itos dictionaries as provided
-            stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
-            itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+
+
+            stoi = {
+                '<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'oil_spot': 262, 'inclusion': 264, 'crescent_gap': 260, 
+                'water_spot': 261, 'punching_hole': 258, 'welding_line': 259, 'silk_spot': 263, 'rolled_pit': 265, 'crease': 266, 
+                'waist_folding': 267, 'the': 270, 'defect': 271, 'is': 272, 'located': 273, 'at': 274, 'center': 275, 
+                'of': 276, 'image': 277, '.': 278, 'right': 279, 'bottom': 280, 'top': 281, 'left': 282
+    }
+
+            itos = {
+                302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'oil_spot', 264: 'inclusion', 260: 'crescent_gap', 
+                261: 'water_spot', 258: 'punching_hole', 259: 'welding_line', 263: 'silk_spot', 265: 'rolled_pit', 266: 'crease', 
+                267: 'waist_folding', 270: 'the', 271: 'defect', 272: 'is', 273: 'located', 274: 'at', 275: 'center', 
+                276: 'of', 277: 'image', 278: '.', 279: 'right', 280: 'bottom', 281: 'top', 282: 'left'
+            }
+
+
+
+
+
 
             # Reverse the stoi dictionary to be able to use ids to get tokens
             itos = defaultdict(lambda: '<UNK>', itos)    
@@ -639,8 +667,26 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
             #ALternate bleu score calculations
             # Convert the ground truth and predictions to text
             # Define the stoi and itos dictionaries as provided
-            stoi = {'<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'patches': 262, 'inclusion': 263, 'rolled-in_scale': 260, 'pitted_surface': 261, 'crazing': 258, 'scratches': 259, 'the': 270, 'defect': 271, 'is': 272, 'and': 273, 'located': 274, 'at': 275, 'center': 276, 'of': 277, 'image': 278, '.': 279, 'right': 280, 'top': 281, 'left': 282, 'bottom': 283}
-            itos = {302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'patches', 263: 'inclusion', 260: 'rolled-in_scale', 261: 'pitted_surface', 258: 'crazing', 259: 'scratches', 270: 'the', 271: 'defect', 272: 'is', 273: 'and', 274: 'located', 275: 'at', 276: 'center', 277: 'of', 278: 'image', 279: '.', 280: 'right', 281: 'top', 282: 'left', 283: 'bottom'}
+
+
+            stoi = {
+                '<PAD>': 302, '<SOS>': 300, '<EOS>': 301, '<UNK>': 299, 'oil_spot': 262, 'inclusion': 264, 'crescent_gap': 260, 
+                'water_spot': 261, 'punching_hole': 258, 'welding_line': 259, 'silk_spot': 263, 'rolled_pit': 265, 'crease': 266, 
+                'waist_folding': 267, 'the': 270, 'defect': 271, 'is': 272, 'located': 273, 'at': 274, 'center': 275, 
+                'of': 276, 'image': 277, '.': 278, 'right': 279, 'bottom': 280, 'top': 281, 'left': 282
+    }
+
+            itos = {
+                302: '<PAD>', 300: '<SOS>', 301: '<EOS>', 299: '<UNK>', 262: 'oil_spot', 264: 'inclusion', 260: 'crescent_gap', 
+                261: 'water_spot', 258: 'punching_hole', 259: 'welding_line', 263: 'silk_spot', 265: 'rolled_pit', 266: 'crease', 
+                267: 'waist_folding', 270: 'the', 271: 'defect', 272: 'is', 273: 'located', 274: 'at', 275: 'center', 
+                276: 'of', 277: 'image', 278: '.', 279: 'right', 280: 'bottom', 281: 'top', 282: 'left'
+            }
+
+
+
+
+
 
             # Reverse the stoi dictionary to be able to use ids to get tokens
             itos = defaultdict(lambda: '<UNK>', itos)    

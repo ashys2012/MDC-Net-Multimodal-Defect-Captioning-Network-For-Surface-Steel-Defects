@@ -21,7 +21,7 @@ from collections import defaultdict
 
 
 vocab = Vocabulary(freq_threshold=5)
-tokenizer = Tokenizer(vocab, num_classes=6, num_bins=CFG.num_bins,
+tokenizer = Tokenizer(vocab, num_classes=10, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
 CFG.bos_idx = tokenizer.BOS_code  
 CFG.pad_idx = tokenizer.PAD_code
@@ -96,21 +96,6 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
             logger.log({"Normal BLEU Score training is": bleu_score})
 
 
-        #Epoch wise Bleu Score avg calculation
-        # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
-        epoch_captions_preds_list.extend(captions_preds_list)
-        epoch_caption_grnd_truth_list.extend(caption_grnd_truth_list[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
-
-        # Make sure the ground truth list is in the correct format for BLEU calculation
-        epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
-
-        # Compute BLEU score for the entire epoch
-        chencherry = SmoothingFunction()
-        bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
-
-        # Log the epoch BLEU score
-        if logger is not None:
-            logger.log({"Epoch BLEU Score": bleu_score_epoch})
 
 
         #ALternate bleu score calculations
@@ -129,6 +114,25 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         bleu_scores_trial = calculate_bleu_scores(ground_truth_text[0], predictions_text)  # Only one ground truth set in this case
         if logger is not None:
             logger.log({"BLEU Score for training with text is": bleu_scores_trial})
+
+
+        # Below code gives an error called unhashable list
+        
+        #Epoch wise Bleu Score avg calculation
+        # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
+        epoch_captions_preds_list.extend(predictions_text)
+        epoch_caption_grnd_truth_list.extend(ground_truth_text[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
+
+        # Make sure the ground truth list is in the correct format for BLEU calculation
+        #epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
+
+        # Compute BLEU score for the entire epoch
+        chencherry = SmoothingFunction()
+        bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
+
+        # Log the epoch BLEU score
+        if logger is not None:
+            logger.log({"Epoch BLEU Score": bleu_score_epoch})
 
 
 
@@ -413,21 +417,7 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
 
 
-                    #Epoch wise Bleu Score avg calculation
-            # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
-            epoch_captions_preds_list.extend(captions_preds_list)
-            epoch_caption_grnd_truth_list.extend(caption_grnd_truth_list[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
 
-            # Make sure the ground truth list is in the correct format for BLEU calculation
-            epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
-
-            # Compute BLEU score for the entire epoch
-            chencherry = SmoothingFunction()
-            bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
-
-            # Log the epoch BLEU score
-            if logger is not None:
-                logger.log({"Epoch BLEU Score": bleu_score_epoch})
 
 
             #ALternate bleu score calculations
@@ -447,6 +437,23 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
             if logger is not None:
                 logger.log({"BLEU Score for validation with text is": bleu_scores_trial})
 
+
+            # Below code gives an error called unhashable list
+                                #Epoch wise Bleu Score avg calculation
+            # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
+            epoch_captions_preds_list.extend(predictions_text)
+            epoch_caption_grnd_truth_list.extend(ground_truth_text[0])  # Assuming caption_grnd_truth_list is wrapped in an additional list
+
+            # Make sure the ground truth list is in the correct format for BLEU calculation
+            #epoch_caption_grnd_truth_list = [epoch_caption_grnd_truth_list]  # Wrap in another list
+
+            # Compute BLEU score for the entire epoch
+            chencherry = SmoothingFunction()
+            bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
+
+            # Log the epoch BLEU score
+            if logger is not None:
+                logger.log({"Epoch BLEU Score": bleu_score_epoch})
 
 
 

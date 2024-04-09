@@ -132,7 +132,7 @@ import wandb
 
 #Initialize wandb and pass configuration from CFG class
 
-wandb.init(project="pix_2_seq_march_224_gc_10_ds", entity="ashys2012", name = "server_v_large_1024_8_8_patch_dr_002_iou_03_cyclic_lr_total_vocab_size_correct_num_cls", config={
+wandb.init(project="pix_2_seq_march_224_gc_10_ds", entity="ashys2012", name = "server_v_large_1024_8_8_patch_dr_002_iou_03_cyclic_lr_total_vocab_size_correct_num_cls_10", config={
     "device": CFG.device.type,  # Logging the device type as a string
     "max_len": CFG.max_len,
     "img_size": CFG.img_size,

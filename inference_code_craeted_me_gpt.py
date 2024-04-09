@@ -119,15 +119,15 @@ def inference_epoch_bbox(model, data_loader, tokenizer, logger=None):
 
 # # Example usage:
 vocab = Vocabulary(freq_threshold=5)
-tokenizer = Tokenizer(vocab, num_classes=11, num_bins=CFG.num_bins,
+tokenizer = Tokenizer(vocab, num_classes=10, num_bins=CFG.num_bins,
                           width=CFG.img_size, height=CFG.img_size, max_len=CFG.max_len)
 CFG.bos_idx = tokenizer.BOS_code
 CFG.pad_idx = tokenizer.PAD_code
 
 
-encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=256)
+encoder = Encoder(model_name=CFG.model_name, pretrained=True, out_dim=1024)
 decoder = Decoder(vocab_size=332, #complete_vocab_size, #tokenizer.vocab_size,
-                  encoder_length=CFG.num_patches, dim=256, num_heads=8, num_layers=8)
+                  encoder_length=CFG.num_patches, dim=1024, num_heads=8, num_layers=8)
 model = EncoderDecoder(encoder, decoder)
 
 model.to(CFG.device)
@@ -167,7 +167,7 @@ transform_pipeline = get_transform_inference(size)
 
 
 # Load the model and weights
-model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_1/best_model_epoch_86.pth'
+model_weights_path = '/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_1/best_model_epoch_19.pth'
 model.load_state_dict(torch.load(model_weights_path, map_location=CFG.device))
 
 # Process the image(s)

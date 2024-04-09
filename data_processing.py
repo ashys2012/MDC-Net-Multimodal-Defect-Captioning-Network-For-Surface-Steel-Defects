@@ -208,9 +208,9 @@ def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_worke
     # DataLoader for the test set
     test_loader = torch.utils.data.DataLoader(
         test_ds,
-        batch_size=batch_size,
+        batch_size=2,
         shuffle=False,
-        collate_fn=partial(collate_fn, max_len=max_len, pad_idx=pad_idx),
+        collate_fn=partial(collate_fn, max_len=40, pad_idx=pad_idx),
         num_workers=num_workers,
         pin_memory=True,
     )
@@ -368,7 +368,7 @@ class Tokenizer:
                     bbox = bbox_label_tokens[i+1:i+5]
                     
                     # Check for valid label and bbox values
-                    if label_tensor.numel() == 1 and label_tensor.item() in range(258, 264) and all(0 <= item <= 224 for item in bbox):
+                    if label_tensor.numel() == 1 and label_tensor.item() in range(258, 268) and all(0 <= item <= 224 for item in bbox):
                         label = label_tensor.item()
                         labels.append(label)
                         bboxes.append([int(item) for item in bbox])
@@ -530,7 +530,7 @@ class Tokenizer:
         if tokens.dim() == 0:               
             tokens = tokens.unsqueeze(0)        
         
-        LABEL_START, LABEL_END = 258, 263
+        LABEL_START, LABEL_END = 258, 267
         label_mask = (tokens >= LABEL_START) & (tokens <= LABEL_END)
 
         # Applying mask to isolate label tokens, maintaining structure
@@ -553,7 +553,7 @@ class Tokenizer:
         bboxes_dequantized_np[:, [1, 3]] = bboxes_dequantized_np[:, [1, 3]] * self.height
         return torch.tensor(bboxes_dequantized_np, device=bboxes_tensor.device).float()
 
-    def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+    def decode_bboxes(self, pred_seq, caption_end_token=304, label_start=258, label_end=267, eos_token=301):
         if isinstance(pred_seq, list):
             pred_seq = torch.tensor(pred_seq, device=CFG.device)
 
@@ -598,7 +598,7 @@ class Tokenizer:
         return padded_bboxes
 
 
-    def decode_bboxes_and_labels_with_scores(self, pred_seq, pred_scores, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+    def decode_bboxes_and_labels_with_scores(self, pred_seq, pred_scores, caption_end_token=304, label_start=258, label_end=267, eos_token=301):
         # Ensure pred_seq is a tensor
         if isinstance(pred_seq, list):
             pred_seq = torch.tensor(pred_seq, device=CFG.device)
@@ -666,7 +666,7 @@ class Tokenizer:
         return padded_bboxes, padded_labels, padded_scores
 
 
-    def decode_bboxes_and_labels(self, pred_seq, caption_end_token=304, label_start=258, label_end=263, eos_token=301):
+    def decode_bboxes_and_labels(self, pred_seq, caption_end_token=304, label_start=258, label_end=267, eos_token=301):
         if isinstance(pred_seq, list):
             pred_seq = torch.tensor(pred_seq, device=CFG.device)
 
@@ -720,7 +720,7 @@ class Tokenizer:
     #this alternate aproach does not have pad_idx and uses 0 score probability to get the label
     def extract_predicted_labels_with_logits(self, logits):
         PAD_TOKEN = CFG.pad_idx
-        LABEL_START, LABEL_END = 258, 263
+        LABEL_START, LABEL_END = 258, 267
         
         batch_size, seq_len, num_classes = logits.shape
         # Prepare tensors for extracted logits and labels

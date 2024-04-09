@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from utils import calculate_bleu_scores
 from collections import defaultdict
-
+import math
 
 vocab = Vocabulary(freq_threshold=5)
 tokenizer = Tokenizer(vocab, num_classes=10, num_bins=CFG.num_bins,
@@ -40,6 +40,11 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
     no_box_penalty = .0  # Penalty for no predicted boxes
     epoch_captions_preds_list = []
     epoch_caption_grnd_truth_list = []
+    preds_epoch_bbox = []
+    targets_epoch_bbox = []
+    iou_meter = AvgMeter("Average IoU")
+    giou_loss_meter = AvgMeter("GIoU Loss")
+
 
 
     for x, y in tqdm_object:
@@ -92,8 +97,8 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         bleu_score = sentence_bleu(caption_grnd_truth_list, captions_preds_list, 
                            smoothing_function=chencherry.method1)
 
-        if logger is not None:
-            logger.log({"Normal BLEU Score training is": bleu_score})
+        # if logger is not None:
+        #     logger.log({"Normal BLEU Score training is": bleu_score})
 
 
 
@@ -140,9 +145,11 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         chencherry = SmoothingFunction()
         bleu_score_epoch = sentence_bleu(epoch_caption_grnd_truth_list, epoch_captions_preds_list, smoothing_function=chencherry.method1)
 
-        # Log the epoch BLEU score
-        if logger is not None:
-            logger.log({"Epoch BLEU Score": bleu_score_epoch})
+        #No proper output in WandB
+
+        # # Log the epoch BLEU score
+        # if logger is not None:
+        #     logger.log({"Epoch BLEU Score": bleu_score_epoch})
 
 
 
@@ -200,7 +207,7 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         # Example of specifying IoU thresholds as a list
         iou_thresholds = [0.3]  # This can be a list of thresholds if needed
 
-        map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
+        map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=False)
 
         # Step 3: Update the metric with your predictions and targets
         # Assuming preds and targets_formatted are your prediction and ground truth data
@@ -235,9 +242,17 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         #     if logger is not None:
         #         logger.log(class_maps_dict)
 
-        # Log overall mAP scores
-        if logger is not None:
-            logger.log({"Training mAP scores": map_scores})
+        # Log overall mAP scores # COmmented because we have the avg scores now
+        # if logger is not None:
+        #     logger.log({"Training mAP scores": map_scores})
+
+
+        #Map calculation per epoch starts here
+
+        # Inside your batch processing loop, replace the direct mAP update with accumulation
+        preds_epoch_bbox.extend(preds_formatted)
+        targets_epoch_bbox.extend(targets_formatted)
+
         
 
 
@@ -263,25 +278,27 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
 
         if len(max_ious) > 0:
             average_iou_score = sum(max_ious) / len(max_ious)
-            #print("Average IoU score:", average_iou_score)
         else:
-            average_iou_score = float('nan')
+            average_iou_score = float('nan')  # Consider how you want to handle this case for your overall epoch average
 
-        if logger is not None:
-            logger.log({"Training Average IoU score": average_iou_score})
-
-
-
+        # Update the IoU AvgMeter with the batch's average IoU score
+        # If average_iou_score is 'nan', it may be skipped or handled specially
+        if not math.isnan(average_iou_score):
+            iou_meter.update(average_iou_score, len(predicted_bboxes))
 
         giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
+
+        # Update the GIoU Loss AvgMeter with the batch's GIoU loss
+        giou_loss_meter.update(giou_bbox_loss.item(), len(predicted_bboxes))
+
         # print("THe giou_bbox_loss is", giou_bbox_loss)
         # print("THe giou_bbox_score is", giou_bbox_score)
-        if logger is not None:
-            logger.log({
-                "Trainig GIoU BBox Loss": giou_bbox_loss,
-                "Trainig GIoU BBox Score Batch": giou_bbox_score_batch,
-                "Trainig Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
-                })
+        # if logger is not None:
+        #     logger.log({
+        #         "Trainig GIoU BBox Loss": giou_bbox_loss,
+        #         #"Trainig GIoU BBox Score Batch": giou_bbox_score_batch,
+        #         #"Trainig Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+        #         })
 
 
 
@@ -365,6 +382,38 @@ def train_epoch(model, train_loader, optimizer, lr_scheduler, criterion, logger=
         tqdm_object.set_postfix(train_loss=total_loss_meter.avg, iou_loss=giou_loss_meter.avg, lr=f"{lr:.6f}")
         if logger is not None:
             logger.log({"train_step_loss": total_loss_meter.avg, "iou_loss": giou_loss_meter.avg, 'lr': lr})
+
+
+    # After all batches in the epoch are processed:
+    # Reinitialize the mAP metric to ensure it's reset for each epoch calculation
+    map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
+    map_metric = map_metric.to(CFG.device)
+
+    # Update the mAP metric with all collected predictions and targets of the epoch
+    for pred, target in zip(preds_epoch_bbox, targets_epoch_bbox):
+        if pred['scores'].nelement() == 0:  # Handle cases with no predictions
+            pred = {
+                "boxes": torch.empty((0, 4), device=CFG.device),
+                "scores": torch.empty((0,), device=CFG.device),
+                "labels": torch.empty((0,), dtype=torch.int64, device=CFG.device)
+            }
+        map_metric.update([pred], [target])
+
+    # Compute and log the mAP for the entire epoch
+    map_scores_epoch = map_metric.compute()
+
+    # Log the epoch-level mAP to your logger (e.g., wandb)
+    if logger is not None:
+        logger.log({"Epoch mAP for Train": map_scores_epoch})
+
+
+    if logger is not None:
+        logger.log({
+        "Training Average IoU Score": iou_meter.avg,
+        "Training GIoU BBox Loss": giou_loss_meter.avg
+         })
+
+
     
 
     
@@ -394,7 +443,10 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
     # Inside your iteration loop, after obtaining captions_preds_list and caption_grnd_truth_list
     epoch_captions_preds_list = []
     epoch_caption_grnd_truth_list = []
-
+    preds_epoch_bbox = []
+    targets_epoch_bbox = []
+    iou_meter = AvgMeter("Average IoU")
+    giou_loss_meter = AvgMeter("GIoU Loss")
 
 
 
@@ -495,21 +547,38 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
 
             iou_score = calculate_batch_iou(predicted_bboxes, ground_truth_bboxes)
             max_ious = calculate_batch_max_iou(predicted_bboxes, ground_truth_bboxes)
-            
+
+
+
             if len(max_ious) > 0:
                 average_iou_score = sum(max_ious) / len(max_ious)
-                # Log average IoU score
-                if logger is not None:
-                    logger.log({"Validation Average IoU score": average_iou_score})
+            else:
+                average_iou_score = float('nan')  # Consider how you want to handle this case for your overall epoch average
+
+            # Update the IoU AvgMeter with the batch's average IoU score
+            # If average_iou_score is 'nan', it may be skipped or handled specially
+            if not math.isnan(average_iou_score):
+                iou_meter.update(average_iou_score, len(predicted_bboxes))
 
             giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
-            # Log GIoU bbox loss and score batch
-            if logger is not None:
-                logger.log({
-                    "Validation GIoU BBox Loss": giou_bbox_loss,
-                    "Validation GIoU BBox Score Batch": giou_bbox_score_batch,
-                    "Validation Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
-                })
+
+            # Update the GIoU Loss AvgMeter with the batch's GIoU loss
+            giou_loss_meter.update(giou_bbox_loss.item(), len(predicted_bboxes))
+            
+            # if len(max_ious) > 0:
+            #     average_iou_score = sum(max_ious) / len(max_ious)
+            #     # Log average IoU score
+            #     if logger is not None:
+            #         logger.log({"Validation Average IoU score": average_iou_score})
+
+            # giou_bbox_loss, giou_bbox_score_batch = giou_loss_with_scores(predicted_bboxes, ground_truth_bboxes)
+            # # Log GIoU bbox loss and score batch
+            # if logger is not None:
+            #     logger.log({
+            #         "Validation GIoU BBox Loss": giou_bbox_loss,
+            #         "Validation GIoU BBox Score Batch": giou_bbox_score_batch,
+            #         "Validation Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+            #     })
 
 
 
@@ -600,6 +669,11 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
                 logger.log({"Validation mAP scores": map_scores})
 
 
+            # Inside your batch processing loop, replace the direct mAP update with accumulation
+            preds_epoch_bbox.extend(preds_formatted)
+            targets_epoch_bbox.extend(targets_formatted)
+
+
 
             ce_loss = criterion(preds.reshape(-1, preds.shape[-1]), y_expected_adjusted)
             # Note: L1 regularization is not applied during validation
@@ -612,6 +686,39 @@ def valid_epoch_bbox(model, valid_loader, criterion, tokenizer, iou_loss_weight=
             total_loss_meter.update(total_loss.item(), x.size(0))
 
             tqdm_object.set_postfix(valid_loss=total_loss_meter.avg, giou_loss=giou_loss_meter.avg)
+
+        # After all batches in the epoch are processed:
+        # Reinitialize the mAP metric to ensure it's reset for each epoch calculation
+        map_metric = MeanAveragePrecision(box_format='xyxy', iou_thresholds=iou_thresholds, class_metrics=True)
+        map_metric = map_metric.to(CFG.device)
+
+        # Update the mAP metric with all collected predictions and targets of the epoch
+        for pred, target in zip(preds_epoch_bbox, targets_epoch_bbox):
+            if pred['scores'].nelement() == 0:  # Handle cases with no predictions
+                pred = {
+                    "boxes": torch.empty((0, 4), device=CFG.device),
+                    "scores": torch.empty((0,), device=CFG.device),
+                    "labels": torch.empty((0,), dtype=torch.int64, device=CFG.device)
+                }
+            map_metric.update([pred], [target])
+
+        # Compute and log the mAP for the entire epoch
+        map_scores_epoch = map_metric.compute()
+
+        # Log the epoch-level mAP to your logger (e.g., wandb)
+        if logger is not None:
+            logger.log({"Epoch mAP for Validation": map_scores_epoch})
+
+        
+        if logger is not None:
+            logger.log({
+                "Validation Average IoU Score": iou_meter.avg,
+                "Validation GIoU BBox Loss": giou_loss_meter.avg
+            })
+
+
+
+
 
     return loss_meter.avg, giou_loss_meter.avg, total_loss_meter.avg
 
@@ -720,7 +827,7 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
                 logger.log({
                     "Testing GIoU BBox Loss": giou_bbox_loss,
                     "Testing GIoU BBox Score Batch": giou_bbox_score_batch,
-                    "Testing Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
+                    #"Testing Length of GIoU BBox Score Batch": len(giou_bbox_score_batch)
                 })
 
             
@@ -743,7 +850,7 @@ def test_epoch(model, test_loader, tokenizer, save_dir='/mnt/sdb/2024/pix_2_seq_
             log_df = pd.DataFrame(log_data)  # Convert your accumulated log data into a DataFrame
 
             # Append this epoch's log DataFrame to the Excel file
-            output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_excel_file_results_validation/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+            output_file_path = f"/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_excel_file_results_validation/epoch_map/validation_log_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
             append_df_to_csv(output_file_path, log_df)
 
 

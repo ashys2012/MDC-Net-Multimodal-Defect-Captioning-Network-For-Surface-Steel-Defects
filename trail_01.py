@@ -132,7 +132,7 @@ import wandb
 
 #Initialize wandb and pass configuration from CFG class
 
-wandb.init(project="pix_2_seq_march_224_gc_10_ds", entity="ashys2012", name = "server_v_large_1024_8_8_patch_dr_002_iou_03_cyclic_lr_total_vocab_size_correct_num_cls_10", config={
+wandb.init(project="pix_2_seq_march_224_gc_10_ds", entity="ashys2012", name = "server_v_large_1024_8_8_patch_dr_002_iou_03_cyclic_lr_pos_dr_4", config={
     "device": CFG.device.type,  # Logging the device type as a string
     "max_len": CFG.max_len,
     "img_size": CFG.img_size,
@@ -193,7 +193,7 @@ def train_eval(model, train_loader, valid_loader, criterion, tokenizer, optimize
         if avg_giou < best_metric:  # Adjust based on your metric; here lower avg_giou indicates improvement
             best_metric = avg_giou
             epochs_since_improvement = 0
-            save_path = f'output_1/best_model_epoch_{epoch+1}.pth'
+            save_path = f'/mnt/sdb/2024/pix_2_seq_with_captions_GC_10_dataset/output_1/epoch_map/best_model_epoch_{epoch+1}.pth'
             torch.save(model.state_dict(), save_path)
             print(f"Saved Improved Model at {save_path}")
         else:

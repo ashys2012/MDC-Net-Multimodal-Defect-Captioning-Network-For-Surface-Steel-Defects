@@ -162,7 +162,7 @@ class VOCDataset(torch.utils.data.Dataset):
 
 
 
-def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.15, test_size=0.05):
+def get_loaders(df, tokenizer, img_size, batch_size, max_len, pad_idx, num_workers=2, valid_size=0.19, test_size=0.01):
     # Adjust valid_size to account for the size after removing the test set
     # This calculation ensures that the validation set is 15% of the original dataset,
     # and the test set is 5%, leaving the training set with 80%.

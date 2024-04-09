@@ -30,7 +30,7 @@ class Decoder(nn.Module):
         
         self.embedding = nn.Embedding(vocab_size, dim)
         self.decoder_pos_embed = nn.Parameter(torch.randn(1, CFG.max_len-1, dim) * .02)
-        self.decoder_pos_drop = nn.Dropout(p=0.05)
+        self.decoder_pos_drop = nn.Dropout(p=0.4)
         
         decoder_layer = nn.TransformerDecoderLayer(d_model=dim, nhead=num_heads)
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
@@ -39,7 +39,7 @@ class Decoder(nn.Module):
         
         self.encoder_pos_embed = nn.Parameter(torch.randn(1, encoder_length, dim) * .02)
         print("Shape of self.encoder_pos_embed:", self.encoder_pos_embed.shape)
-        self.encoder_pos_drop = nn.Dropout(p=0.05)
+        self.encoder_pos_drop = nn.Dropout(p=0.4)
         
         self.init_weights()
         
